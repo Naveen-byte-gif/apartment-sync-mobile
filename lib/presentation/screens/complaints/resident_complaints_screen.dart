@@ -2,6 +2,7 @@ import '../../../core/imports/app_imports.dart';
 import '../../../data/models/complaint_data.dart';
 import '../../../data/models/user_data.dart';
 import 'dart:convert';
+import 'package:intl/intl.dart';
 import 'create_complaint_screen.dart';
 import 'complaint_detail_screen.dart';
 
@@ -47,6 +48,97 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
       socketService.on('work_update_added', (data) {
         print('📡 [FLUTTER] Work update added event received');
         _loadComplaints(); // Refresh to show new work update
+      });
+      
+      // Listen for ticket status updated (from backend)
+      socketService.on('ticket_status_updated', (data) {
+        print('📡 [FLUTTER] Ticket status updated event received: $data');
+        if (mounted) {
+          _loadComplaints(); // Refresh to show status update
+          
+          // Show notification with admin name and time
+          if (data['updatedBy'] != null && data['updatedAt'] != null) {
+            final updatedBy = data['updatedBy'] as String;
+            final updatedAt = data['updatedAt'] as String;
+            final newStatus = data['newStatus'] as String? ?? '';
+            final oldStatus = data['oldStatus'] as String? ?? '';
+            final ticketNumber = data['ticketNumber'] as String? ?? '';
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ticket $ticketNumber: $oldStatus → $newStatus',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(Icons.person, size: 14, color: Colors.white70),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Updated by: $updatedBy',
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                        const SizedBox(width: 12),
+                        const Icon(Icons.access_time, size: 14, color: Colors.white70),
+                        const SizedBox(width: 4),
+                        Text(
+                          DateFormat('h:mm a').format(DateTime.parse(updatedAt)),
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.blue.shade700,
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'View',
+                  textColor: Colors.white,
+                  onPressed: () {
+                    // Could navigate to complaint detail if needed
+                  },
+                ),
+              ),
+            );
+          }
+        }
+      });
+      
+      // Also listen for complaint_status_updated (alternative event name)
+      socketService.on('complaint_status_updated', (data) {
+        print('📡 [FLUTTER] Complaint status updated event received: $data');
+        if (mounted) {
+          _loadComplaints();
+        }
+      });
+      
+      socketService.on('status_updated', (data) {
+        print('📡 [FLUTTER] Status updated event received (legacy)');
+        if (mounted) {
+          _loadComplaints(); // Refresh to show status update
+        }
+      });
+      
+      socketService.on('complaint_resolved', (data) {
+        print('📡 [FLUTTER] Complaint resolved event received');
+        if (mounted) {
+          _loadComplaints(); // Refresh to show resolved status
+        }
+      });
+      
+      socketService.on('ticket_resolved', (data) {
+        print('📡 [FLUTTER] Ticket resolved event received');
+        if (mounted) {
+          _loadComplaints(); // Refresh to show resolved status
+        }
       });
     }
   }

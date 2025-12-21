@@ -1,5 +1,8 @@
 import '../../../core/imports/app_imports.dart';
 import '../../../data/models/complaint_data.dart';
+import 'dart:convert';
+import '../complaints/complaint_detail_screen.dart';
+import 'admin_complaint_detail_screen.dart';
 
 class ComplaintsManagementScreen extends StatefulWidget {
   const ComplaintsManagementScreen({super.key});
@@ -24,7 +27,41 @@ class _ComplaintsManagementScreenState extends State<ComplaintsManagementScreen>
   }
 
   void _setupSocketListeners() {
-    print('🔌 [FLUTTER] Setting up socket listeners for complaints');
+    print('🔌 [FLUTTER] Setting up socket listeners for admin complaints');
+    final socketService = SocketService();
+    final userJson = StorageService.getString(AppConstants.userKey);
+    if (userJson != null) {
+      try {
+        final userData = jsonDecode(userJson);
+        final userId = userData['_id'] ?? userData['id'];
+        if (userId != null) {
+          socketService.connect(userId);
+          
+          socketService.on('complaint_created', (data) {
+            print('📡 [FLUTTER] Complaint created event received');
+            if (mounted) {
+              _loadComplaints();
+            }
+          });
+          
+          socketService.on('complaint_updated', (data) {
+            print('📡 [FLUTTER] Complaint updated event received');
+            if (mounted) {
+              _loadComplaints();
+            }
+          });
+          
+          socketService.on('status_updated', (data) {
+            print('📡 [FLUTTER] Status updated event received');
+            if (mounted) {
+              _loadComplaints();
+            }
+          });
+        }
+      } catch (e) {
+        print('❌ [FLUTTER] Error setting up socket: $e');
+      }
+    }
   }
 
   Future<void> _loadComplaints() async {
@@ -229,7 +266,15 @@ class _ComplaintsManagementScreenState extends State<ComplaintsManagementScreen>
                               child: InkWell(
                                 onTap: () {
                                   print('🖱️ [FLUTTER] Complaint tapped: ${complaint['ticketNumber']}');
-                                  _showComplaintDetails(complaint);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => AdminComplaintDetailScreen(
+                                        complaintId: complaint['_id']?.toString() ?? 
+                                                     complaint['id']?.toString() ?? '',
+                                      ),
+                                    ),
+                                  ).then((_) => _loadComplaints());
                                 },
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
@@ -354,74 +399,6 @@ class _ComplaintsManagementScreenState extends State<ComplaintsManagementScreen>
     );
   }
 
-  void _showComplaintDetails(Map<String, dynamic> complaint) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(complaint['title'] ?? 'Complaint Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _DetailRow(label: 'Ticket', value: complaint['ticketNumber'] ?? 'N/A'),
-              _DetailRow(label: 'Status', value: complaint['status'] ?? 'N/A'),
-              _DetailRow(label: 'Category', value: complaint['category'] ?? 'N/A'),
-              if (complaint['priority'] != null)
-                _DetailRow(label: 'Priority', value: complaint['priority']),
-              if (complaint['description'] != null)
-                _DetailRow(label: 'Description', value: complaint['description']),
-              if (complaint['createdBy'] != null) ...[
-                const Divider(),
-                const Text('Created By:', style: TextStyle(fontWeight: FontWeight.bold)),
-                _DetailRow(
-                  label: 'Name',
-                  value: complaint['createdBy']['fullName'] ?? 'N/A',
-                ),
-                if (complaint['createdBy']['flatNumber'] != null)
-                  _DetailRow(
-                    label: 'Flat',
-                    value: 'Floor ${complaint['createdBy']['floorNumber']} - ${complaint['createdBy']['flatNumber']}',
-                  ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _DetailRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(child: Text(value)),
-        ],
-      ),
-    );
-  }
-}
 

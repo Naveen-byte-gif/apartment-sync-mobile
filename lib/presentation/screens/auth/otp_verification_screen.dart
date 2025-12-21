@@ -1,4 +1,5 @@
 import '../../../core/imports/app_imports.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../data/models/user_data.dart';
 import 'dart:convert';
 import '../home/home_screen.dart';
@@ -85,12 +86,20 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
 
           if (token != null) {
             ApiService.setToken(token);
+            await StorageService.setString(AppConstants.tokenKey, token);
 
             if (userData != null) {
               await StorageService.setString(
                 AppConstants.userKey,
                 jsonEncode(userData),
               );
+            }
+
+            // Send FCM token after successful registration/login
+            try {
+              await NotificationService.sendPendingToken();
+            } catch (e) {
+              print('⚠️ Error sending FCM token after registration: $e');
             }
 
             if (mounted) {
@@ -101,6 +110,9 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                   // Navigate based on status
                   if (userData?['status'] == 'active') {
                     final user = UserData.fromJson(userData);
+                    // Connect socket
+                    SocketService().connect(user.id);
+                    
                     if (user.role == AppConstants.roleAdmin) {
                       // This shouldn't happen for user registration, but handle it
                       Navigator.pushAndRemoveUntil(
@@ -148,6 +160,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
 
           if (token != null) {
             ApiService.setToken(token);
+            await StorageService.setString(AppConstants.tokenKey, token);
 
             if (userData != null) {
               await StorageService.setString(
@@ -155,8 +168,18 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                 jsonEncode(userData),
               );
 
+              // Send FCM token after successful login
+              try {
+                await NotificationService.sendPendingToken();
+              } catch (e) {
+                print('⚠️ Error sending FCM token after login: $e');
+              }
+
+              // Connect socket
+              final user = UserData.fromJson(userData);
+              SocketService().connect(user.id);
+
               if (mounted) {
-                final user = UserData.fromJson(userData);
                 if (user.role == AppConstants.roleAdmin) {
                   // Navigate to admin dashboard
                   Navigator.pushAndRemoveUntil(

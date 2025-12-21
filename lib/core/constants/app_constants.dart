@@ -9,6 +9,7 @@ class AppConstants {
   static const String fcmTokenKey = 'fcm_token';
   static const String isFirstLaunchKey = 'is_first_launch';
   static const String selectedBuildingKey = 'selected_building_code';
+  static const String cacheKey = 'chat_cache';
   
   // Complaint Status
   static const String complaintStatusOpen = 'Open';

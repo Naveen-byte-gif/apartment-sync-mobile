@@ -76,6 +76,15 @@ dependencies:
   # Form Validation
   email_validator: ^2.1.17
 
+  # XML parsing (for WHO RSS feeds)
+  xml: ^6.5.0
+
+  # Emoji Picker
+  emoji_picker_flutter: ^2.0.0
+
+  # Text to Speech
+  flutter_tts: ^4.0.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,4 +1,5 @@
 import '../../../core/imports/app_imports.dart';
+import '../../../core/services/notification_service.dart';
 import '../../providers/auth_provider.dart';
 import '../home/home_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
@@ -135,6 +136,13 @@ class _LoginScreenState extends State<LoginScreen> {
         // Optional: socket connect
         final user = UserData.fromJson(userData);
         SocketService().connect(user.id);
+
+        // Send FCM token after successful login
+        try {
+          await NotificationService.sendPendingToken();
+        } catch (e) {
+          print('⚠️ Error sending FCM token after login: $e');
+        }
 
         // ✅ DIRECT NAVIGATION TO HOME
         Navigator.pushAndRemoveUntil(

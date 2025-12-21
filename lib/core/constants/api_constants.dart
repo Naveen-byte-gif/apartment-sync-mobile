@@ -1,9 +1,15 @@
 class ApiConstants {
   // Base URL - Update this with your backend URL
-  static const String baseUrl = 'http://192.168.0.106:6500/api';
+  static const String baseUrl = 'http://192.168.1.36:6500/api';
+
+  // ------------- AWS URL--------------
+  // static const String baseUrl = 'http://16.171.146.254:6500/api';
   // static const String baseUrl = 'https://apartment-sync-backend.onrender.com/api';
   // Socket.IO
-  static const String socketUrl = 'http://192.168.0.106:6500';
+  static const String socketUrl = 'http://192.168.1.36:6500';
+
+  // ------------- AWS URL--------------
+  // static const String socketUrl = 'http://16.171.146.254:6500';
   // static const String socketUrl = 'https://apartment-sync-backend.onrender.com';
 
   // Auth Endpoints
@@ -57,6 +63,16 @@ class ApiConstants {
   // Staff Endpoints
   static const String staffDashboard = '/staff/dashboard';
   static const String staffAssignedComplaints = '/staff/assigned-complaints';
+
+  // Chat Endpoints
+  static const String chats = '/chats';
+  static const String chatMessages = '/chats'; // /chats/:chatId/messages
+  static const String chatPersonal =
+      '/chats/personal'; // /chats/personal/:userId
+  static const String chatCommunity =
+      '/chats/community'; // /chats/community/:apartmentCode
+  static const String chatResidents = '/chats/residents';
+  static const String uploadChatMedia = '/chats/upload-media';
 
   // Headers
   static Map<String, String> getHeaders(String? token) {

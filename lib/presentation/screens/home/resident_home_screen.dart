@@ -2,6 +2,7 @@ import '../../../core/imports/app_imports.dart';
 import '../../../data/models/user_data.dart';
 import '../../screens/complaints/resident_complaints_screen.dart';
 import '../../screens/notices/notices_screen.dart';
+import '../../screens/auth/login_screen.dart';
 import 'dart:convert';
 
 class ResidentHomeScreen extends StatefulWidget {
@@ -88,6 +89,20 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
         }
       }
 
+      // Check if user is authenticated
+      final token = StorageService.getString(AppConstants.tokenKey);
+      if (token == null || token.isEmpty) {
+        print('⚠️ [FLUTTER] No authentication token found');
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
+          );
+        }
+        return;
+      }
+
       // Load dashboard data
       print('📊 [FLUTTER] Loading dashboard data...');
       final dashboardResponse = await ApiService.get('/users/dashboard');
@@ -99,6 +114,16 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
           );
         });
         print('✅ [FLUTTER] Dashboard data loaded');
+      } else if (dashboardResponse['message']?.toString().toLowerCase().contains('not authorized') == true ||
+                 dashboardResponse['message']?.toString().toLowerCase().contains('unauthorized') == true) {
+        print('⚠️ [FLUTTER] Authentication failed, redirecting to login');
+        if (mounted) {
+          await StorageService.remove(AppConstants.tokenKey);
+          await StorageService.remove(AppConstants.userKey);
+          ApiService.setToken(null);
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        }
+        return;
       }
 
       // Load building and flat details
@@ -128,6 +153,19 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
       }
     } catch (e) {
       print('❌ [FLUTTER] Error loading data: $e');
+      // Check if it's an authentication error
+      if (e.toString().toLowerCase().contains('unauthorized') || 
+          e.toString().toLowerCase().contains('401')) {
+        print('⚠️ [FLUTTER] Authentication error, redirecting to login');
+        if (mounted) {
+          await StorageService.remove(AppConstants.tokenKey);
+          await StorageService.remove(AppConstants.userKey);
+          ApiService.setToken(null);
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+        }
+        return;
+      }
+      
       if (mounted && _user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -567,7 +605,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                _formatDate(complaint['createdAt']),
+                                _formatDateRelative(complaint['createdAt']),
                                 style: Theme.of(context).textTheme.labelSmall
                                     ?.copyWith(color: AppColors.textLight),
                               ),

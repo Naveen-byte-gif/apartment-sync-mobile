@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import '../constants/api_constants.dart';
 import 'storage_service.dart';
 import '../constants/app_constants.dart';
@@ -93,6 +95,46 @@ class ApiService {
 
     print('📡 [API] DELETE Response Status: ${response.statusCode}');
     print('📡 [API] DELETE Response Body: ${response.body}');
+
+    return _handleResponse(response);
+  }
+
+  static Future<Map<String, dynamic>> uploadFile(
+    String endpoint,
+    File file, {
+    String fieldName = 'image',
+  }) async {
+    final url = Uri.parse('${ApiConstants.baseUrl}$endpoint');
+    print('📡 [API] UPLOAD Request: $url');
+
+    final request = http.MultipartRequest('POST', url);
+
+    // Add headers
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      if (_token != null) 'Authorization': 'Bearer $_token',
+    };
+    request.headers.addAll(headers);
+
+    // Add file
+    final fileStream = http.ByteStream(file.openRead());
+    final fileLength = await file.length();
+    final multipartFile = http.MultipartFile(
+      fieldName,
+      fileStream,
+      fileLength,
+      filename: file.path.split('/').last,
+      contentType: MediaType('image', 'jpeg'), // Default, can be improved
+    );
+    request.files.add(multipartFile);
+
+    print('📡 [API] Uploading file: ${file.path}');
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+
+    print('📡 [API] UPLOAD Response Status: ${response.statusCode}');
+    print('📡 [API] UPLOAD Response Body: ${response.body}');
 
     return _handleResponse(response);
   }

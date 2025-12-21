@@ -136,6 +136,8 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
   }
 
   Widget _buildProfileCard() {
+    final profilePictureUrl = _user?.profilePicture;
+    
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -150,17 +152,75 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.2),
                   shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.primary,
+                    width: 2,
+                  ),
                 ),
-                child: Center(
-                  child: Text(
-                    _user?.fullName[0].toUpperCase() ?? 'R',
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                    ),
+                child: ClipOval(
+                  child: profilePictureUrl != null && profilePictureUrl.isNotEmpty
+                      ? Image.network(
+                          profilePictureUrl,
+                          fit: BoxFit.cover,
+                          width: 80,
+                          height: 80,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Center(
+                              child: CircularProgressIndicator(
+                                value: loadingProgress.expectedTotalBytes != null
+                                    ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                    : null,
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: AppColors.primary.withOpacity(0.2),
+                              child: Center(
+                                child: Text(
+                                  _user?.fullName[0].toUpperCase() ?? 'R',
+                                  style: const TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : Container(
+                          color: AppColors.primary.withOpacity(0.2),
+                          child: Center(
+                            child: Text(
+                              _user?.fullName[0].toUpperCase() ?? 'R',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    color: Colors.white,
+                    size: 16,
                   ),
                 ),
               ),
@@ -179,62 +239,38 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                if (_flatData != null || _user?.flatNumber != null)
-                  Text(
-                    _flatData != null
-                        ? 'Floor ${_flatData!['floorNumber']} - ${_flatData!['flatNumber']}'
-                        : '${_user?.wing ?? ''} - ${_user?.flatNumber ?? ''}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _user?.status == 'active'
-                        ? Colors.green.shade100
-                        : Colors.orange.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _user?.status == 'active' ? 'Verified Resident' : 'Pending',
-                    style: TextStyle(
-                      color: _user?.status == 'active' ? Colors.green : Colors.orange,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
+                Text(
+                  _user?.flatNumber != null && _user?.wing != null
+                      ? '${_user!.flatNumber} • ${_user!.wing}'
+                      : _user?.flatNumber ?? 'No flat assigned',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
                   ),
                 ),
                 const SizedBox(height: 8),
-                if (_user?.phoneNumber != null)
-                  Row(
-                    children: [
-                      const Icon(Icons.phone, size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        _user!.phoneNumber,
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
                   ),
-                if (_user?.email != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.email, size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          _user!.email!,
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
+                  decoration: BoxDecoration(
+                    color: _user?.role == 'admin'
+                        ? AppColors.error.withOpacity(0.1)
+                        : AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
+                  child: Text(
+                    _user?.role?.toUpperCase() ?? 'RESIDENT',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: _user?.role == 'admin'
+                          ? AppColors.error
+                          : AppColors.primary,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

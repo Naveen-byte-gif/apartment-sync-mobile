@@ -7,6 +7,9 @@ import 'building_details_screen.dart';
 import 'users_management_screen.dart';
 import 'complaints_management_screen.dart';
 import 'settings_screen.dart';
+import '../chat/chat_list_screen.dart';
+import '../home/tabs/news_tab_screen.dart';
+import '../profile/profile_screen.dart';
 import 'dart:convert';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -186,7 +189,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 2:
         return const ComplaintsManagementScreen();
       case 3:
-        return const SettingsScreen();
+        return const NewsTabScreen();
+      case 4:
+        return const ChatListScreen();
+      case 5:
+        return const ProfileScreen();
       default:
         return _isLoading
             ? const Center(child: CircularProgressIndicator())
@@ -263,9 +270,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   PopupMenuItem<String>(
                     value: 'add_new',
                     child: Row(
-                      children: const [
-                        Icon(Icons.add, color: AppColors.primary),
-                        SizedBox(width: 8),
+                      children: [
+                        const Icon(Icons.add, color: AppColors.primary),
+                        const SizedBox(width: 8),
                         Text('Add New Building'),
                       ],
                     ),
@@ -318,8 +325,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             label: 'Complaints',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
+            icon: Icon(Icons.article_outlined),
+            label: 'News',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_bubble_outline),
+            label: 'Chat',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
           ),
         ],
       ),

@@ -25,13 +25,20 @@ export '../services/storage_service.dart';
 export '../services/notification_service.dart';
 export '../services/socket_service.dart';
 export '../services/error_handler.dart';
+export '../services/tts_service.dart';
+export '../services/story_service.dart';
 
 // Core constants
 export '../constants/api_constants.dart';
 export '../constants/app_constants.dart';
+export '../constants/news_api_constants.dart';
+export '../constants/story_api_constants.dart';
 
 // Providers
 export '../../presentation/providers/auth_provider.dart';
+export '../../presentation/providers/news_provider.dart';
+export '../../presentation/providers/story_provider.dart';
+export '../../presentation/providers/tts_provider.dart';
 
 // Widgets
 export '../../presentation/widgets/loading_widget.dart';

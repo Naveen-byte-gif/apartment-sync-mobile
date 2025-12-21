@@ -1,5 +1,8 @@
 import '../../../core/imports/app_imports.dart';
 import '../auth/login_screen.dart';
+import '../home/tabs/news_tab_screen.dart';
+import '../home/tabs/chat_tab_screen.dart';
+import '../profile/profile_screen.dart';
 
 class StaffDashboardScreen extends StatefulWidget {
   const StaffDashboardScreen({super.key});
@@ -9,6 +12,7 @@ class StaffDashboardScreen extends StatefulWidget {
 }
 
 class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
+  int _currentIndex = 0;
   Map<String, dynamic>? _dashboardData;
   List<Map<String, dynamic>> _assignedComplaints = [];
   bool _isLoading = true;
@@ -50,6 +54,119 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     }
   }
 
+  Widget _getBodyForIndex(int index) {
+    switch (index) {
+      case 0:
+        return _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _buildDashboard();
+      case 1:
+        return const NewsTabScreen();
+      case 2:
+        return const ChatTabScreen();
+      case 3:
+        return const ProfileScreen();
+      default:
+        return _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _buildDashboard();
+    }
+  }
+
+  Widget _buildDashboard() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Stats Cards
+          Row(
+            children: [
+              Expanded(
+                child: _StatCard(
+                  title: 'Active Tasks',
+                  value: '${_dashboardData?['activeComplaints'] ?? 0}',
+                  icon: Icons.assignment,
+                  color: Colors.blue,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _StatCard(
+                  title: 'Completed',
+                  value: '${_dashboardData?['resolvedComplaints'] ?? 0}',
+                  icon: Icons.check_circle,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _StatCard(
+                  title: 'Total Tasks',
+                  value: '${_dashboardData?['totalComplaints'] ?? 0}',
+                  icon: Icons.list,
+                  color: Colors.orange,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          // Assigned Complaints
+          const Text(
+            'Assigned Complaints',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_assignedComplaints.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  children: [
+                    Icon(Icons.assignment_outlined, size: 64, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No assigned complaints',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._assignedComplaints.map((complaint) {
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.blue.shade100,
+                    child: const Icon(Icons.description, color: Colors.blue),
+                  ),
+                  title: Text(complaint['title'] ?? 'No Title'),
+                  subtitle: Text('Ticket: ${complaint['ticketNumber'] ?? 'N/A'}'),
+                  trailing: Chip(
+                    label: Text(complaint['status'] ?? 'N/A'),
+                    backgroundColor: Colors.blue.shade100,
+                  ),
+                  onTap: () {
+                    print('🖱️ [FLUTTER] Complaint tapped: ${complaint['ticketNumber']}');
+                    // Show complaint details
+                  },
+                ),
+              );
+            }).toList(),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -66,99 +183,36 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Stats Cards
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _StatCard(
-                          title: 'Active Tasks',
-                          value: '${_dashboardData?['activeComplaints'] ?? 0}',
-                          icon: Icons.assignment,
-                          color: Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _StatCard(
-                          title: 'Completed',
-                          value: '${_dashboardData?['resolvedComplaints'] ?? 0}',
-                          icon: Icons.check_circle,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _StatCard(
-                          title: 'Total Tasks',
-                          value: '${_dashboardData?['totalComplaints'] ?? 0}',
-                          icon: Icons.list,
-                          color: Colors.orange,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  // Assigned Complaints
-                  const Text(
-                    'Assigned Complaints',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_assignedComplaints.isEmpty)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          children: [
-                            Icon(Icons.assignment_outlined, size: 64, color: Colors.grey),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'No assigned complaints',
-                              style: TextStyle(fontSize: 16, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    ..._assignedComplaints.map((complaint) {
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.blue.shade100,
-                            child: const Icon(Icons.description, color: Colors.blue),
-                          ),
-                          title: Text(complaint['title'] ?? 'No Title'),
-                          subtitle: Text('Ticket: ${complaint['ticketNumber'] ?? 'N/A'}'),
-                          trailing: Chip(
-                            label: Text(complaint['status'] ?? 'N/A'),
-                            backgroundColor: Colors.blue.shade100,
-                          ),
-                          onTap: () {
-                            print('🖱️ [FLUTTER] Complaint tapped: ${complaint['ticketNumber']}');
-                            // Show complaint details
-                          },
-                        ),
-                      );
-                    }).toList(),
-                ],
-              ),
-            ),
+      body: _getBodyForIndex(_currentIndex),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: AppColors.primary,
+        unselectedItemColor: Colors.grey,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard),
+            label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.article_outlined),
+            label: 'News',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_bubble_outline),
+            label: 'Chat',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
+      ),
     );
   }
 

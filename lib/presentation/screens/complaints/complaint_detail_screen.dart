@@ -1,5 +1,6 @@
 import '../../../core/imports/app_imports.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert';
 
 class ComplaintDetailScreen extends StatefulWidget {
   final String complaintId;
@@ -18,6 +19,163 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
   void initState() {
     super.initState();
     _loadComplaintDetails();
+    _setupSocketListeners();
+  }
+
+  void _setupSocketListeners() {
+    print('🔌 [FLUTTER] Setting up socket listeners for complaint detail');
+    final socketService = SocketService();
+    final userJson = StorageService.getString(AppConstants.userKey);
+    if (userJson != null) {
+      try {
+        final userData = jsonDecode(userJson);
+        final userId = userData['_id'] ?? userData['id'];
+        if (userId != null) {
+          socketService.connect(userId);
+          
+          socketService.on('complaint_updated', (data) {
+            print('📡 [FLUTTER] Complaint updated event received');
+            if (mounted && (data['complaintId'] == widget.complaintId || 
+                           data['ticketId'] == widget.complaintId)) {
+              _loadComplaintDetails();
+            }
+          });
+          
+          socketService.on('ticket_status_updated', (data) {
+            print('📡 [FLUTTER] Ticket status updated event received: $data');
+            if (mounted && (data['complaintId'] == widget.complaintId || 
+                           data['ticketId'] == widget.complaintId ||
+                           data['complaint']?['id'] == widget.complaintId)) {
+              _loadComplaintDetails();
+              // Show notification with admin name and time
+              final updatedBy = data['updatedBy'] as String? ?? 
+                               data['complaint']?['updatedBy'] as String? ?? 
+                               'Admin';
+              final updatedAt = data['updatedAt'] as String? ?? 
+                               data['timestamp'] as String? ?? 
+                               DateTime.now().toIso8601String();
+              final newStatus = data['newStatus'] as String? ?? 
+                               data['complaint']?['newStatus'] as String? ?? 
+                               '';
+              final oldStatus = data['oldStatus'] as String? ?? 
+                              data['complaint']?['oldStatus'] as String? ?? 
+                              '';
+              final ticketNumber = data['ticketNumber'] as String? ?? 
+                                  data['complaint']?['ticketNumber'] as String? ?? 
+                                  '';
+              
+              if (updatedBy != null && updatedAt != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          ticketNumber.isNotEmpty 
+                            ? 'Ticket $ticketNumber: $oldStatus → $newStatus'
+                            : 'Status Changed: $oldStatus → $newStatus',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.person, size: 14, color: Colors.white70),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Updated by: $updatedBy',
+                                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Icon(Icons.access_time, size: 14, color: Colors.white70),
+                            const SizedBox(width: 4),
+                            Text(
+                              DateFormat('h:mm a').format(DateTime.parse(updatedAt)),
+                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    backgroundColor: Colors.blue.shade700,
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
+              }
+            }
+          });
+          
+          // Also listen for complaint_status_updated (alternative event name)
+          socketService.on('complaint_status_updated', (data) {
+            print('📡 [FLUTTER] Complaint status updated event received: $data');
+            if (mounted && (data['complaint']?['id'] == widget.complaintId ||
+                           data['complaintId'] == widget.complaintId)) {
+              _loadComplaintDetails();
+            }
+          });
+          
+          socketService.on('status_updated', (data) {
+            print('📡 [FLUTTER] Status updated event received');
+            if (mounted && data['complaintId'] == widget.complaintId) {
+              _loadComplaintDetails();
+              // Show notification with admin name and time
+              if (data['updatedBy'] != null && data['updatedAt'] != null) {
+                final updatedBy = data['updatedBy'] as String;
+                final updatedAt = data['updatedAt'] as String;
+                final newStatus = data['newStatus'] as String? ?? '';
+                final oldStatus = data['oldStatus'] as String? ?? '';
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Status Changed: $oldStatus → $newStatus',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.person, size: 14, color: Colors.white70),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Changed by: $updatedBy',
+                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                            const SizedBox(width: 12),
+                            const Icon(Icons.access_time, size: 14, color: Colors.white70),
+                            const SizedBox(width: 4),
+                            Text(
+                              DateFormat('h:mm a').format(DateTime.parse(updatedAt)),
+                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    backgroundColor: Colors.blue.shade700,
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+              }
+            }
+          });
+        }
+      } catch (e) {
+        print('❌ [FLUTTER] Error setting up socket: $e');
+      }
+    }
   }
 
   Future<void> _loadComplaintDetails() async {
@@ -332,64 +490,163 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Timeline',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            children: [
+              const Icon(Icons.timeline, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Text(
+                'Status Change History',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          ...timeline.map((event) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          if (timeline.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                'No status changes yet',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+              ),
+            )
+          else
+            ...timeline.asMap().entries.map((entry) {
+              final index = entry.key;
+              final event = entry.value;
+              final isLast = index == timeline.length - 1;
+              
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Column(
                       children: [
-                        Text(
-                          event['action'] ?? 'Status changed',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: _getStatusColor(event['status'] ?? 'Open'),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
                           ),
                         ),
-                        if (event['description'] != null)
-                          Text(
-                            event['description'],
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
+                        if (!isLast)
+                          Container(
+                            width: 2,
+                            height: 40,
+                            color: Colors.grey.shade300,
+                            margin: const EdgeInsets.symmetric(vertical: 4),
                           ),
-                        Text(
-                          event['timestamp'] != null
-                              ? DateFormat('MMM d, yyyy • h:mm a')
-                                  .format(DateTime.parse(event['timestamp']))
-                              : 'Recently',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade400,
-                          ),
-                        ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  event['action'] ?? event['status'] ?? 'Status changed',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _getStatusColor(event['status'] ?? 'Open')
+                                      .withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _getStatusColor(event['status'] ?? 'Open'),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  event['status'] ?? '',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: _getStatusColor(event['status'] ?? 'Open'),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (event['description'] != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              event['description'],
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.person,
+                                size: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                event['updatedBy']?['fullName'] ?? 
+                                event['updatedByName'] ?? 
+                                'Admin',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Icon(
+                                Icons.access_time,
+                                size: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                event['timestamp'] != null || event['updatedAt'] != null
+                                    ? DateFormat('MMM d, yyyy • h:mm a').format(
+                                        DateTime.parse(
+                                          event['timestamp'] ?? 
+                                          event['updatedAt'] ?? 
+                                          DateTime.now().toIso8601String()
+                                        )
+                                      )
+                                    : 'Recently',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
         ],
       ),
     );

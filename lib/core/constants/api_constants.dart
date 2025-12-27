@@ -3,13 +3,13 @@ class ApiConstants {
   static const String baseUrl = 'http://192.168.0.107:6500/api';
 
   // ------------- AWS URL--------------
-  // static const String baseUrl = 'http://16.171.146.254:6500/api';
+  // static const String baseUrl = 'http://13.60.226.11:6500/api';
   // static const String baseUrl = 'https://apartment-sync-backend.onrender.com/api';
   // Socket.IO
   static const String socketUrl = 'http://192.168.0.107:6500';
 
   // ------------- AWS URL--------------
-  // static const String socketUrl = 'http://16.171.146.254:6500';
+  // static const String socketUrl = 'http://13.60.226.11:6500';
   // static const String socketUrl = 'https://apartment-sync-backend.onrender.com';
 
   // Auth Endpoints
@@ -19,6 +19,8 @@ class ApiConstants {
   static const String passwordLogin = '/auth/password-login';
   static const String adminLogin = '/auth/admin/login';
   static const String adminRegister = '/auth/admin/register';
+  static const String adminVerifyOTPRegister =
+      '/auth/admin/verify-otp-register';
   static const String getMe = '/auth/me';
 
   // User Endpoints
@@ -43,22 +45,30 @@ class ApiConstants {
   static const String adminUsers = '/admin/users';
   static const String adminBuildingDetails = '/admin/building-details';
   static const String adminAvailableFlats = '/admin/available-flats';
-  
+
   // Helper method to get flat details endpoint
-  static String getFlatDetails(String buildingCode, int floorNumber, String flatNumber) {
+  static String getFlatDetails(
+    String buildingCode,
+    int floorNumber,
+    String flatNumber,
+  ) {
     return '/admin/flats/$buildingCode/$floorNumber/$flatNumber';
   }
-  
+
   // Staff Endpoints
   static const String staffDashboard = '/staff/dashboard';
   static const String staffBuildings = '/staff/buildings';
   static const String staffBuildingDetails = '/staff/building-details';
-  
+
   // Visitor Endpoints
   static const String visitors = '/visitors';
-  
+
   // Helper method to change flat status endpoint
-  static String changeFlatStatus(String buildingCode, int floorNumber, String flatNumber) {
+  static String changeFlatStatus(
+    String buildingCode,
+    int floorNumber,
+    String flatNumber,
+  ) {
     return '/admin/flats/$buildingCode/$floorNumber/$flatNumber/status';
   }
 
@@ -96,11 +106,14 @@ class ApiConstants {
   static const String chatCommunityMessage = '/chats/community/message';
   static const String chatPrivate = '/chats/private';
   static String chatPrivateWithUser(String userId) => '/chats/private/$userId';
-  static String chatPrivateMessage(String chatId) => '/chats/private/$chatId/message';
+  static String chatPrivateMessage(String chatId) =>
+      '/chats/private/$chatId/message';
   static String chatMessages(String chatId) => '/chats/$chatId/messages';
   static String chatMarkRead(String chatId) => '/chats/$chatId/read';
-  static String chatDeleteMessage(String messageId) => '/chats/message/$messageId';
-  static String chatReportMessage(String messageId) => '/chats/message/$messageId/report';
+  static String chatDeleteMessage(String messageId) =>
+      '/chats/message/$messageId';
+  static String chatReportMessage(String messageId) =>
+      '/chats/message/$messageId/report';
   static const String chatResidents = '/chats/residents';
   static const String uploadChatMedia = '/chats/upload-media';
 

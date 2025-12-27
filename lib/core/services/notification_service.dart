@@ -20,15 +20,20 @@ class NotificationService {
 
   static Future<void> initialize() async {
     try {
-      // Request permission
+      // Request permission (handles Android 13+ POST_NOTIFICATIONS automatically)
       NotificationSettings settings = await _firebaseMessaging.requestPermission(
         alert: true,
         badge: true,
         sound: true,
+        provisional: false, // Explicit permission required
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
         print('✅ User granted notification permission');
+      } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+        print('⚠️ User granted provisional notification permission');
+      } else {
+        print('⚠️ User denied notification permission');
       }
     } catch (e) {
       print('⚠️ Firebase Messaging permission request failed: $e');
@@ -55,6 +60,28 @@ class NotificationService {
       initSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
+
+    // Create high-importance notification channel for Android (required for Android 8.0+)
+    // This must be done early to ensure notifications can be displayed
+    try {
+      await _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(
+            const AndroidNotificationChannel(
+              'apartmentsync_notifications',
+              'ApartmentSync Notifications',
+              description: 'Notifications from ApartmentSync',
+              importance: Importance.high,
+              playSound: true,
+              enableVibration: true,
+              showBadge: true,
+            ),
+          );
+      print('✅ Notification channel created with high importance');
+    } catch (e) {
+      print('⚠️ Error creating notification channel: $e');
+    }
 
     try {
       // Get FCM token
@@ -696,10 +723,13 @@ class NotificationService {
 
 /// Top-level function for background message handler (when app is terminated)
 /// This must be a top-level function for Firebase to work properly
+/// Firebase automatically displays notifications when app is in background/killed state
+/// This handler is called for data-only messages or for additional processing
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   print('📨 [BACKGROUND HANDLER] Message received: ${message.notification?.title}');
+  print('📨 [BACKGROUND HANDLER] Body: ${message.notification?.body}');
   print('📨 [BACKGROUND HANDLER] Message data: ${message.data}');
   
   // Initialize local notifications for background handler
@@ -720,6 +750,27 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       FlutterLocalNotificationsPlugin();
   await localNotifications.initialize(initSettings);
   
+  // Create notification channel for Android (if not already created)
+  try {
+    await localNotifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            'apartmentsync_notifications',
+            'ApartmentSync Notifications',
+            description: 'Notifications from ApartmentSync',
+            importance: Importance.high,
+            playSound: true,
+            enableVibration: true,
+            showBadge: true,
+          ),
+        );
+    print('✅ [BACKGROUND HANDLER] Notification channel created');
+  } catch (e) {
+    print('⚠️ [BACKGROUND HANDLER] Error creating notification channel: $e');
+  }
+  
   // Extract notification data
   final notificationData = <String, dynamic>{};
   notificationData.addAll(message.data);
@@ -732,4 +783,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   } catch (e) {
     print('❌ [BACKGROUND HANDLER] Error storing notification: $e');
   }
+  
+  // Note: If message has notification payload, Firebase automatically displays it
+  // This handler is primarily for data-only messages or additional processing
 }

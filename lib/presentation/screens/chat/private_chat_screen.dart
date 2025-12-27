@@ -17,12 +17,14 @@ import '../../providers/auth_provider.dart';
 
 class PrivateChatScreen extends StatefulWidget {
   final String chatId;
-  final String chatName;
+  final String? chatName;
+  final Map<String, dynamic>? otherParticipant;
 
   const PrivateChatScreen({
     super.key,
     required this.chatId,
-    required this.chatName,
+    this.chatName,
+    this.otherParticipant,
   });
 
   @override
@@ -80,30 +82,30 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         source: ImageSource.gallery,
         imageQuality: 85,
       );
-      
+
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
     }
   }
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     final hasImage = _selectedImage != null;
-    
+
     if (text.isEmpty && !hasImage) return;
 
     _messageController.clear();
     context.read<ChatProvider>().stopTyping(widget.chatId);
 
     final chatProvider = context.read<ChatProvider>();
-    
+
     if (hasImage) {
       // Upload image first, then send message
       try {
@@ -119,14 +121,14 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           _selectedImage = null;
         });
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error uploading image: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error uploading image: $e')));
       }
     } else {
       await chatProvider.sendMessage(widget.chatId, text);
     }
-    
+
     _scrollToBottom();
   }
 
@@ -208,7 +210,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
           maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         child: Column(
-          crossAxisAlignment: isOwnMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isOwnMessage
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             // Sender info (only for received messages)
             if (!isOwnMessage)
@@ -218,12 +222,14 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                   children: [
                     CircleAvatar(
                       radius: 14,
-                      backgroundImage: message.sender.profilePicture != null &&
+                      backgroundImage:
+                          message.sender.profilePicture != null &&
                               message.sender.profilePicture!.isNotEmpty
                           ? NetworkImage(message.sender.profilePicture!)
                           : null,
                       backgroundColor: AppColors.primary.withOpacity(0.1),
-                      child: message.sender.profilePicture == null ||
+                      child:
+                          message.sender.profilePicture == null ||
                               message.sender.profilePicture!.isEmpty
                           ? Text(
                               message.sender.name.isNotEmpty
@@ -255,12 +261,19 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                              color: _getRoleColor(message.sender.role).withOpacity(0.15),
+                              color: _getRoleColor(
+                                message.sender.role,
+                              ).withOpacity(0.15),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: _getRoleColor(message.sender.role).withOpacity(0.3),
+                                color: _getRoleColor(
+                                  message.sender.role,
+                                ).withOpacity(0.3),
                                 width: 1,
                               ),
                             ),
@@ -323,9 +336,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                             color: AppColors.divider,
                             child: Center(
                               child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes != null
+                                value:
+                                    loadingProgress.expectedTotalBytes != null
                                     ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
+                                          loadingProgress.expectedTotalBytes!
                                     : null,
                               ),
                             ),
@@ -339,7 +353,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.broken_image, color: AppColors.textLight),
+                                const Icon(
+                                  Icons.broken_image,
+                                  color: AppColors.textLight,
+                                ),
                                 const SizedBox(height: 8),
                                 Text(
                                   'Failed to load image',
@@ -363,7 +380,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       style: TextStyle(
                         fontSize: 15,
                         height: 1.4,
-                        color: isOwnMessage ? Colors.white : AppColors.textPrimary,
+                        color: isOwnMessage
+                            ? Colors.white
+                            : AppColors.textPrimary,
                       ),
                     ),
                   // Edited indicator
@@ -449,10 +468,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               _formatDate(date),
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textLight,
-              ),
+              style: const TextStyle(fontSize: 12, color: AppColors.textLight),
             ),
           ),
           Expanded(child: Divider(color: AppColors.divider)),
@@ -481,7 +497,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
               radius: 18,
               backgroundColor: AppColors.primary.withOpacity(0.1),
               child: Text(
-                widget.chatName.isNotEmpty ? widget.chatName[0].toUpperCase() : '?',
+                (widget.chatName?.isNotEmpty ?? false)
+                    ? widget.chatName![0].toUpperCase()
+                    : (widget.otherParticipant?['name'] as String? ?? 'U')[0]
+                          .toUpperCase(),
                 style: const TextStyle(
                   color: AppColors.primary,
                   fontWeight: FontWeight.bold,
@@ -494,7 +513,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.chatName,
+                    widget.chatName ??
+                        widget.otherParticipant?['name'] as String? ??
+                        'Private Chat',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -507,10 +528,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       if (isTyping) {
                         return const Text(
                           'Typing...',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange,
-                          ),
+                          style: TextStyle(fontSize: 12, color: Colors.orange),
                         );
                       }
                       return const Text(
@@ -543,7 +561,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
             child: Consumer<ChatProvider>(
               builder: (context, chatProvider, child) {
                 final messages = chatProvider.getMessagesForChat(widget.chatId);
-                
+
                 if (messages.isEmpty && chatProvider.isLoading) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -579,7 +597,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                   itemBuilder: (context, index) {
                     final message = messages[index];
                     final isOwnMessage = message.sender.id == currentUserId;
-                    
+
                     // Show date separator if needed
                     if (index == 0 ||
                         (index > 0 &&
@@ -592,7 +610,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         ],
                       );
                     }
-                    
+
                     return _buildMessageBubble(message, isOwnMessage);
                   },
                 );
@@ -606,7 +624,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                 return const SizedBox.shrink();
               }
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     Text(
@@ -710,8 +731,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.image_outlined,
-                          color: AppColors.textSecondary),
+                      icon: const Icon(
+                        Icons.image_outlined,
+                        color: AppColors.textSecondary,
+                      ),
                       onPressed: _pickImage,
                     ),
                     Container(
@@ -721,7 +744,10 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_forward, color: Colors.white),
+                        icon: const Icon(
+                          Icons.arrow_forward,
+                          color: Colors.white,
+                        ),
                         onPressed: _sendMessage,
                       ),
                     ),
@@ -749,4 +775,3 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     );
   }
 }
-

@@ -85,6 +85,15 @@ dependencies:
   # Text to Speech
   flutter_tts: ^4.0.2
 
+  # QR Code Scanner
+  mobile_scanner: ^5.2.3
+  
+  # QR Code Generator
+  qr_flutter: ^4.1.0
+  
+  # Share functionality
+  share_plus: ^7.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

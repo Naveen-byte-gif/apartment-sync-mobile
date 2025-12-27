@@ -111,12 +111,23 @@ class ChatProvider with ChangeNotifier {
         final type = queuedMessage['type'] as String?;
         final media = queuedMessage['media'] as Map<String, dynamic>?;
 
+        // Determine if it's community or private chat
+        final chat = _chats.firstWhere((c) => c.id == chatId, orElse: () => ChatRoom(id: chatId, name: '', type: 'personal', participants: []));
+        final isCommunity = chat.type == 'community';
+        
+        String endpoint;
+        if (isCommunity) {
+          endpoint = ApiConstants.chatCommunityMessage;
+        } else {
+          endpoint = ApiConstants.chatPrivateMessage(chatId);
+        }
+        
         final response = await ApiService.post(
-          '/chats/$chatId/messages',
+          endpoint,
           {
-            'text': text,
-            'type': type ?? 'text',
-            if (media != null) 'media': media,
+            'content': text,
+            'messageType': type ?? 'text',
+            if (media != null) 'attachments': [media],
           },
         );
 
@@ -335,21 +346,59 @@ class ChatProvider with ChangeNotifier {
     _ensureSocketConnected();
 
     try {
-      String endpoint = '/chats';
-      if (filter != null && filter.isNotEmpty) {
-        endpoint += '?filter=$filter';
-      }
-
-      final response = await ApiService.get(endpoint);
+      // Load private chats
+      final privateResponse = await ApiService.get(ApiConstants.chatPrivate);
+      List<ChatRoom> allChats = [];
       
-      if (response['success'] == true) {
-        final chatsData = response['data']?['chats'] as List? ?? [];
-        _chats = chatsData.map((c) => ChatRoom.fromJson(c)).toList();
-        _cacheChats();
-        _error = null;
-      } else {
-        _error = response['message'] ?? 'Failed to load chats';
+      if (privateResponse['success'] == true) {
+        final privateChatsData = privateResponse['data']?['chats'] as List? ?? [];
+        // Convert private chats to ChatRoom format if needed
+        for (var chatData in privateChatsData) {
+          // Create ChatRoom from private chat data
+          final chatId = chatData['id'] as String?;
+          final otherParticipant = chatData['otherParticipant'] as Map<String, dynamic>?;
+          if (chatId != null && otherParticipant != null) {
+            final chatName = otherParticipant['name'] as String? ?? 'Private Chat';
+            final chatRoom = ChatRoom(
+              id: chatId,
+              name: chatName,
+              type: 'personal',
+              participants: [],
+              lastMessageAt: chatData['lastMessageAt'] != null
+                  ? DateTime.parse(chatData['lastMessageAt'])
+                  : DateTime.now(),
+            );
+            allChats.add(chatRoom);
+          }
+        }
       }
+      
+      // Load community chat (if user has apartment)
+      try {
+        final communityResponse = await ApiService.get(ApiConstants.chatCommunity);
+        if (communityResponse['success'] == true) {
+          final chatData = communityResponse['data']?['chat'];
+          if (chatData != null) {
+            final chatRoom = ChatRoom(
+              id: chatData['id'] as String? ?? 'community',
+              name: chatData['name'] as String? ?? 'Community Chat',
+              type: 'community',
+              participants: [],
+              lastMessageAt: chatData['lastMessageAt'] != null
+                  ? DateTime.parse(chatData['lastMessageAt'])
+                  : DateTime.now(),
+            );
+            allChats.insert(0, chatRoom); // Add community chat at the beginning
+          }
+        }
+      } catch (e) {
+        // Community chat might not be available, that's okay
+        print('Note: Community chat not available: $e');
+      }
+      
+      _chats = allChats;
+      _cacheChats();
+      _error = null;
     } catch (e) {
       _error = 'Error loading chats: $e';
       print('Error loading chats: $e');
@@ -466,7 +515,40 @@ class ChatProvider with ChangeNotifier {
         return tempMessage;
       }
 
-      final response = await ApiService.post('/chats/$chatId/messages', messageData);
+      // Determine if it's community or private chat
+      // Try to find chat in loaded chats, otherwise assume private
+      ChatRoom? chat;
+      try {
+        chat = _chats.firstWhere((c) => c.id == chatId);
+      } catch (e) {
+        // Chat not in list, try to determine from context
+        // Community chats might have a specific pattern or we can try community first
+        chat = null;
+      }
+      
+      final isCommunity = chat?.type == 'community';
+      
+      String endpoint;
+      Map<String, dynamic> requestBody;
+      
+      if (isCommunity) {
+        endpoint = ApiConstants.chatCommunityMessage;
+        requestBody = {
+          'content': text ?? '',
+          'messageType': type ?? (media != null ? 'image' : 'text'),
+          if (media != null) 'attachments': [media],
+        };
+      } else {
+        // Private chat
+        endpoint = ApiConstants.chatPrivateMessage(chatId);
+        requestBody = {
+          'content': text ?? '',
+          'messageType': type ?? (media != null ? 'image' : 'text'),
+          if (media != null) 'attachments': [media],
+        };
+      }
+      
+      final response = await ApiService.post(endpoint, requestBody);
       
       if (response['success'] == true) {
         final sentMessage = ChatMessage.fromJson(response['data']?['message'] ?? {});
@@ -564,7 +646,7 @@ class ChatProvider with ChangeNotifier {
   // Mark messages as read
   Future<void> markAsRead(String chatId) async {
     try {
-      await ApiService.post('/chats/$chatId/read', {});
+      await ApiService.put(ApiConstants.chatMarkRead(chatId), {});
       
       // Update local chat unread status
       final chatIndex = _chats.indexWhere((c) => c.id == chatId);
@@ -593,7 +675,7 @@ class ChatProvider with ChangeNotifier {
   // Get or create personal chat
   Future<ChatRoom?> getOrCreatePersonalChat(String userId) async {
     try {
-      final response = await ApiService.post('/chats/personal/$userId', {});
+      final response = await ApiService.get(ApiConstants.chatPrivateWithUser(userId));
       
       if (response['success'] == true) {
         final chat = ChatRoom.fromJson(response['data']?['chat'] ?? {});
@@ -617,7 +699,7 @@ class ChatProvider with ChangeNotifier {
   // Get or create community chat
   Future<ChatRoom?> getOrCreateCommunityChat(String apartmentCode) async {
     try {
-      final response = await ApiService.get('/chats/community/$apartmentCode');
+      final response = await ApiService.get(ApiConstants.chatCommunity);
       
       if (response['success'] == true) {
         final chat = ChatRoom.fromJson(response['data']?['chat'] ?? {});

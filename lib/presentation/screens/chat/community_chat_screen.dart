@@ -16,14 +16,10 @@ import '../../providers/chat_provider.dart';
 import '../../providers/auth_provider.dart';
 
 class CommunityChatScreen extends StatefulWidget {
-  final String chatId;
-  final String chatName;
+  final String? chatId;
+  final String? chatName;
 
-  const CommunityChatScreen({
-    super.key,
-    required this.chatId,
-    required this.chatName,
-  });
+  const CommunityChatScreen({super.key, this.chatId, this.chatName});
 
   @override
   State<CommunityChatScreen> createState() => _CommunityChatScreenState();
@@ -36,23 +32,62 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   bool _isTyping = false;
   bool _showEmojiPicker = false;
   File? _selectedImage;
+  String? _chatId;
+  String? _chatName;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final chatProvider = context.read<ChatProvider>();
-      chatProvider.setCurrentChat(widget.chatId);
-      chatProvider.loadCachedMessages(widget.chatId);
-      chatProvider.loadMessages(widget.chatId);
-    });
+    // Use provided chatId if available, otherwise load from API
+    if (widget.chatId != null) {
+      _chatId = widget.chatId;
+      _chatName = widget.chatName;
+      _isLoading = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final chatProvider = context.read<ChatProvider>();
+        chatProvider.setCurrentChat(_chatId!);
+        chatProvider.loadCachedMessages(_chatId!);
+        chatProvider.loadMessages(_chatId!);
+      });
+    } else {
+      _loadCommunityChat();
+    }
+  }
+
+  Future<void> _loadCommunityChat() async {
+    try {
+      // Get community chat (auto-created if doesn't exist)
+      final response = await ApiService.get(ApiConstants.chatCommunity);
+      if (response['success'] == true && mounted) {
+        setState(() {
+          _chatId = response['data']?['chat']?['id'];
+          _chatName = response['data']?['chat']?['name'] ?? 'Community Chat';
+          _isLoading = false;
+        });
+
+        if (_chatId != null) {
+          final chatProvider = context.read<ChatProvider>();
+          chatProvider.setCurrentChat(_chatId!);
+          chatProvider.loadCachedMessages(_chatId!);
+          chatProvider.loadMessages(_chatId!);
+        }
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      print('Error loading community chat: $e');
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
-    context.read<ChatProvider>().stopTyping(widget.chatId);
+    if (_chatId != null) {
+      context.read<ChatProvider>().stopTyping(_chatId!);
+    }
     context.read<ChatProvider>().setCurrentChat(null);
     super.dispose();
   }
@@ -79,37 +114,39 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
         source: ImageSource.gallery,
         imageQuality: 85,
       );
-      
+
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
     }
   }
 
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     final hasImage = _selectedImage != null;
-    
+
     if (text.isEmpty && !hasImage) return;
 
     _messageController.clear();
-    context.read<ChatProvider>().stopTyping(widget.chatId);
+    if (_chatId != null) {
+      context.read<ChatProvider>().stopTyping(_chatId!);
+    }
 
     final chatProvider = context.read<ChatProvider>();
-    
+
     if (hasImage) {
       // Upload image first, then send message
       try {
         final media = await chatProvider.uploadChatMedia(_selectedImage!);
         if (media != null) {
           await chatProvider.sendMessage(
-            widget.chatId,
+            _chatId!,
             text.isEmpty ? null : text,
             media: media,
           );
@@ -118,14 +155,14 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
           _selectedImage = null;
         });
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error uploading image: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error uploading image: $e')));
       }
     } else {
-      await chatProvider.sendMessage(widget.chatId, text);
+      await chatProvider.sendMessage(_chatId!, text);
     }
-    
+
     _scrollToBottom();
   }
 
@@ -133,10 +170,14 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     final chatProvider = context.read<ChatProvider>();
     if (text.isNotEmpty && !_isTyping) {
       _isTyping = true;
-      chatProvider.startTyping(widget.chatId);
+      if (_chatId != null) {
+        chatProvider.startTyping(_chatId!);
+      }
     } else if (text.isEmpty && _isTyping) {
       _isTyping = false;
-      chatProvider.stopTyping(widget.chatId);
+      if (_chatId != null) {
+        chatProvider.stopTyping(_chatId!);
+      }
     }
   }
 
@@ -195,7 +236,11 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
         message.type == 'image';
   }
 
-  Widget _buildMessageBubble(ChatMessage message, bool isOwnMessage, {bool showSenderName = true}) {
+  Widget _buildMessageBubble(
+    ChatMessage message,
+    bool isOwnMessage, {
+    bool showSenderName = true,
+  }) {
     final hasMedia = _hasValidMedia(message);
     final hasText = message.text != null && message.text!.isNotEmpty;
 
@@ -220,12 +265,14 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                   children: [
                     CircleAvatar(
                       radius: 14,
-                      backgroundImage: message.sender.profilePicture != null &&
+                      backgroundImage:
+                          message.sender.profilePicture != null &&
                               message.sender.profilePicture!.isNotEmpty
                           ? NetworkImage(message.sender.profilePicture!)
                           : null,
                       backgroundColor: AppColors.primary.withOpacity(0.1),
-                      child: message.sender.profilePicture == null ||
+                      child:
+                          message.sender.profilePicture == null ||
                               message.sender.profilePicture!.isEmpty
                           ? Text(
                               message.sender.name.isNotEmpty
@@ -257,12 +304,19 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
-                              color: _getRoleColor(message.sender.role).withOpacity(0.15),
+                              color: _getRoleColor(
+                                message.sender.role,
+                              ).withOpacity(0.15),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: _getRoleColor(message.sender.role).withOpacity(0.3),
+                                color: _getRoleColor(
+                                  message.sender.role,
+                                ).withOpacity(0.3),
                                 width: 1,
                               ),
                             ),
@@ -325,9 +379,10 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                             color: AppColors.divider,
                             child: Center(
                               child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes != null
+                                value:
+                                    loadingProgress.expectedTotalBytes != null
                                     ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
+                                          loadingProgress.expectedTotalBytes!
                                     : null,
                               ),
                             ),
@@ -341,7 +396,10 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.broken_image, color: AppColors.textLight),
+                                const Icon(
+                                  Icons.broken_image,
+                                  color: AppColors.textLight,
+                                ),
                                 const SizedBox(height: 8),
                                 Text(
                                   'Failed to load image',
@@ -410,10 +468,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               _formatDate(date),
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textLight,
-              ),
+              style: const TextStyle(fontSize: 12, color: AppColors.textLight),
             ),
           ),
           Expanded(child: Divider(color: AppColors.divider)),
@@ -424,6 +479,21 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading || _chatId == null) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: const Text('Community Chat'),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final authProvider = context.watch<AuthProvider>();
     final currentUserId = authProvider.user?.id;
 
@@ -442,7 +512,9 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
               radius: 18,
               backgroundColor: AppColors.primary.withOpacity(0.1),
               child: Text(
-                widget.chatName.isNotEmpty ? widget.chatName[0].toUpperCase() : '?',
+                (_chatName?.isNotEmpty ?? false)
+                    ? _chatName![0].toUpperCase()
+                    : '?',
                 style: const TextStyle(
                   color: AppColors.primary,
                   fontWeight: FontWeight.bold,
@@ -452,7 +524,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                widget.chatName,
+                _chatName ?? 'Community Chat',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -479,8 +551,10 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
           Expanded(
             child: Consumer<ChatProvider>(
               builder: (context, chatProvider, child) {
-                final messages = chatProvider.getMessagesForChat(widget.chatId);
-                
+                final messages = _chatId != null
+                    ? chatProvider.getMessagesForChat(_chatId!)
+                    : <ChatMessage>[];
+
                 if (messages.isEmpty && chatProvider.isLoading) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -516,11 +590,12 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                   itemBuilder: (context, index) {
                     final message = messages[index];
                     final isOwnMessage = message.sender.id == currentUserId;
-                    
+
                     // Show sender name if different from previous message or first message
-                    final showSenderName = index == 0 ||
+                    final showSenderName =
+                        index == 0 ||
                         messages[index - 1].sender.id != message.sender.id;
-                    
+
                     // Show date separator if needed
                     if (index == 0 ||
                         (index > 0 &&
@@ -529,12 +604,20 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                       return Column(
                         children: [
                           _buildDateSeparator(message.createdAt),
-                          _buildMessageBubble(message, isOwnMessage, showSenderName: showSenderName),
+                          _buildMessageBubble(
+                            message,
+                            isOwnMessage,
+                            showSenderName: showSenderName,
+                          ),
                         ],
                       );
                     }
-                    
-                    return _buildMessageBubble(message, isOwnMessage, showSenderName: showSenderName);
+
+                    return _buildMessageBubble(
+                      message,
+                      isOwnMessage,
+                      showSenderName: showSenderName,
+                    );
                   },
                 );
               },
@@ -543,11 +626,14 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
           // Typing indicator
           Consumer<ChatProvider>(
             builder: (context, chatProvider, child) {
-              if (!chatProvider.isUserTyping(widget.chatId)) {
+              if (_chatId != null && !chatProvider.isUserTyping(_chatId!)) {
                 return const SizedBox.shrink();
               }
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     Text(
@@ -651,8 +737,10 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.image_outlined,
-                          color: AppColors.textSecondary),
+                      icon: const Icon(
+                        Icons.image_outlined,
+                        color: AppColors.textSecondary,
+                      ),
                       onPressed: _pickImage,
                     ),
                     Container(
@@ -662,7 +750,10 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                         shape: BoxShape.circle,
                       ),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_forward, color: Colors.white),
+                        icon: const Icon(
+                          Icons.arrow_forward,
+                          color: Colors.white,
+                        ),
                         onPressed: _sendMessage,
                       ),
                     ),
@@ -690,4 +781,3 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     );
   }
 }
-

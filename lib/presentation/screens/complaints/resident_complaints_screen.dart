@@ -52,8 +52,16 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
       
       // Listen for ticket status updated (from backend)
       socketService.on('ticket_status_updated', (data) {
-        print('📡 [FLUTTER] Ticket status updated event received: $data');
+        print('📡 [FLUTTER] Ticket status updated event received');
+        print('📡 [FLUTTER] Event data: ${jsonEncode(data)}');
+        print('📡 [FLUTTER] Old Status: ${data['oldStatus']}');
+        print('📡 [FLUTTER] New Status: ${data['newStatus']}');
+        print('📡 [FLUTTER] Updated By: ${data['updatedBy']}');
+        print('📡 [FLUTTER] Updated At: ${data['updatedAt']}');
+        print('📡 [FLUTTER] Ticket Number: ${data['ticketNumber']}');
+        
         if (mounted) {
+          print('✅ [FLUTTER] Refreshing complaints list after status update');
           _loadComplaints(); // Refresh to show status update
           
           // Show notification with admin name and time
@@ -144,25 +152,50 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
   }
 
   Future<void> _loadComplaints() async {
+    final loadStartTime = DateTime.now();
     print('🖱️ [FLUTTER] Loading resident complaints...');
+    print('🖱️ [FLUTTER] Load start time: ${loadStartTime.toIso8601String()}');
+    
     setState(() => _isLoading = true);
     try {
       final response = await ApiService.get('${ApiConstants.complaints}/my-complaints');
+      final loadEndTime = DateTime.now();
+      final loadDuration = loadEndTime.difference(loadStartTime).inMilliseconds;
+      
       print('✅ [FLUTTER] Complaints response received');
-      print('📦 [FLUTTER] Response: ${response.toString()}');
+      print('✅ [FLUTTER] Load end time: ${loadEndTime.toIso8601String()}');
+      print('✅ [FLUTTER] Load duration: ${loadDuration}ms');
 
       if (response['success'] == true) {
         final complaintsList = response['data']?['complaints'] as List?;
         if (complaintsList != null) {
+          final complaints = complaintsList.cast<Map<String, dynamic>>();
+          print('✅ [FLUTTER] Loaded ${complaints.length} complaints');
+          
+          // Log status distribution
+          final statusCounts = <String, int>{};
+          for (var complaint in complaints) {
+            final status = complaint['status'] as String? ?? 'Unknown';
+            statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+          }
+          print('📊 [FLUTTER] Status distribution: $statusCounts');
+          
           setState(() {
-            _complaints = complaintsList.cast<Map<String, dynamic>>();
+            _complaints = complaints;
             _applyFilters();
           });
-          print('✅ [FLUTTER] Loaded ${_complaints.length} complaints');
+          print('✅ [FLUTTER] Complaints loaded and filtered successfully');
         }
+      } else {
+        print('❌ [FLUTTER] Failed to load complaints: ${response['message']}');
       }
     } catch (e) {
+      final loadEndTime = DateTime.now();
+      final loadDuration = loadEndTime.difference(loadStartTime).inMilliseconds;
       print('❌ [FLUTTER] Error loading complaints: $e');
+      print('❌ [FLUTTER] Error time: ${loadEndTime.toIso8601String()}');
+      print('❌ [FLUTTER] Error duration: ${loadDuration}ms');
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading complaints: $e')),

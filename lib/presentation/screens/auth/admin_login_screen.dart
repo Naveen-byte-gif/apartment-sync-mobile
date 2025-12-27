@@ -1,10 +1,17 @@
 import '../../../core/imports/app_imports.dart';
+import '../../../core/constants/app_constants.dart';
+import '../../../data/models/user_data.dart';
 import 'dart:convert';
 import '../admin/admin_dashboard_screen.dart';
 import 'admin_register_screen.dart';
 
 class AdminLoginScreen extends StatefulWidget {
-  const AdminLoginScreen({super.key});
+  final String? roleContext;
+  
+  const AdminLoginScreen({
+    super.key,
+    this.roleContext,
+  });
 
   @override
   State<AdminLoginScreen> createState() => _AdminLoginScreenState();
@@ -36,6 +43,12 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         final userData = response['data']?['user'];
 
         if (token != null) {
+          // Verify role matches expected role context if provided
+          final user = UserData.fromJson(userData);
+          if (widget.roleContext != null && user.role != widget.roleContext) {
+            throw Exception('Invalid role. Please use the correct login page.');
+          }
+
           ApiService.setToken(token);
           
           // Store user data as JSON string
@@ -47,6 +60,16 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           }
 
           if (mounted) {
+            // Connect socket
+            SocketService().connect(user.id);
+
+            // Send FCM token after successful login
+            try {
+              await NotificationService.sendPendingToken();
+            } catch (e) {
+              print('⚠️ Error sending FCM token after login: $e');
+            }
+
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),

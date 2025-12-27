@@ -3,7 +3,7 @@ import '../../../providers/chat_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../../data/models/chat_room.dart';
 import '../../../../data/models/chat_user.dart';
-import '../../../screens/chat/chat_list_screen.dart';
+import '../../../screens/chat/premium_chat_list_screen.dart';
 import '../../../screens/chat/private_chat_screen.dart';
 import '../../../screens/chat/community_chat_screen.dart';
 
@@ -40,24 +40,24 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
       final chatProvider = context.read<ChatProvider>();
       final authProvider = context.read<AuthProvider>();
       final currentUser = authProvider.user;
-      
+
       if (currentUser == null) {
         setState(() => _isLoading = false);
         return;
       }
-      
+
       String? apartmentCode;
       if (currentUser.role == 'admin') {
         apartmentCode = null;
       } else {
         apartmentCode = currentUser.apartmentCode;
       }
-      
+
       final users = await chatProvider.getUsersForChat(
         apartmentCode: apartmentCode,
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
       );
-      
+
       setState(() {
         _users = users;
         _isLoading = false;
@@ -70,8 +70,8 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Navigate directly to ChatListScreen which has full functionality
-    return const ChatListScreen();
+    // Use premium chat list screen with all features
+    return const PremiumChatListScreen();
   }
 
   Widget _buildOldChatTab() {
@@ -97,9 +97,16 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
                       decoration: InputDecoration(
                         hintText: 'Q Search',
                         hintStyle: TextStyle(color: AppColors.textLight),
-                        prefixIcon: Icon(Icons.search, color: AppColors.textLight, size: 20),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: AppColors.textLight,
+                          size: 20,
+                        ),
                         border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                       ),
                       onChanged: (value) {
                         setState(() {
@@ -113,7 +120,10 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
                 ),
                 const SizedBox(width: 12),
                 IconButton(
-                  icon: const Icon(Icons.notifications_outlined, color: AppColors.textPrimary),
+                  icon: const Icon(
+                    Icons.notifications_outlined,
+                    color: AppColors.textPrimary,
+                  ),
                   onPressed: () {},
                 ),
               ],
@@ -167,7 +177,9 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
                       decoration: BoxDecoration(
                         border: Border(
                           bottom: BorderSide(
-                            color: _showUsersList ? AppColors.primary : Colors.transparent,
+                            color: _showUsersList
+                                ? AppColors.primary
+                                : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -176,8 +188,12 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
                         'Users',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: _showUsersList ? AppColors.primary : AppColors.textSecondary,
-                          fontWeight: _showUsersList ? FontWeight.w600 : FontWeight.normal,
+                          color: _showUsersList
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                          fontWeight: _showUsersList
+                              ? FontWeight.w600
+                              : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -193,7 +209,9 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
                       decoration: BoxDecoration(
                         border: Border(
                           bottom: BorderSide(
-                            color: !_showUsersList ? AppColors.primary : Colors.transparent,
+                            color: !_showUsersList
+                                ? AppColors.primary
+                                : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -202,8 +220,12 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
                         'Chats',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: !_showUsersList ? AppColors.primary : AppColors.textSecondary,
-                          fontWeight: !_showUsersList ? FontWeight.w600 : FontWeight.normal,
+                          color: !_showUsersList
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                          fontWeight: !_showUsersList
+                              ? FontWeight.w600
+                              : FontWeight.normal,
                         ),
                       ),
                     ),
@@ -254,7 +276,7 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
             // Navigate to private chat with user
             final chatProvider = context.read<ChatProvider>();
             final chat = await chatProvider.getOrCreatePersonalChat(user.id);
-            
+
             if (chat != null && mounted) {
               Navigator.push(
                 context,
@@ -287,7 +309,7 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
             return ListTile(
               leading: CircleAvatar(
                 child: Text(
-                  chat.name.isNotEmpty 
+                  chat.name.isNotEmpty
                       ? chat.name.substring(0, 1).toUpperCase()
                       : 'C',
                 ),
@@ -343,4 +365,3 @@ class _ChatTabScreenState extends State<ChatTabScreen> {
     return 'Just now';
   }
 }
-

@@ -145,6 +145,9 @@ class ApiService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       print('📡 [API] Parsed Data: ${jsonEncode(data)}');
 
+      // Add status code to response for better error handling
+      data['_statusCode'] = response.statusCode;
+
       // Always return the response data, let the caller handle success/error
       // This allows proper handling of {"success": false, "message": "..."} responses
       return data;
@@ -155,6 +158,7 @@ class ApiService {
         'success': false,
         'message': 'Failed to parse response: ${e.toString()}',
         'error': e.toString(),
+        '_statusCode': response.statusCode,
       };
     }
   }

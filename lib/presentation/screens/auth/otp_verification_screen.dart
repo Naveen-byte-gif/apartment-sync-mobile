@@ -1,20 +1,24 @@
 import '../../../core/imports/app_imports.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../data/models/user_data.dart';
+import '../../../core/constants/app_constants.dart';
 import 'dart:convert';
 import '../home/home_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
+import '../staff/staff_dashboard_screen.dart';
 
 class OTPVerificationScreen extends StatefulWidget {
   final String phoneNumber;
   final String purpose; // 'registration' or 'login'
   final Map<String, dynamic>? userData; // For registration only
+  final String? roleContext; // For role-based routing
 
   const OTPVerificationScreen({
     super.key,
     required this.phoneNumber,
     required this.purpose,
     this.userData,
+    this.roleContext,
   });
 
   @override
@@ -180,11 +184,27 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
               SocketService().connect(user.id);
 
               if (mounted) {
+                // Verify role matches expected role context if provided
+                if (widget.roleContext != null && user.role != widget.roleContext) {
+                  AppMessageHandler.showError(
+                    context,
+                    'Invalid role. Please use the correct login page.',
+                  );
+                  Navigator.pop(context);
+                  return;
+                }
+
+                // Navigate based on role
                 if (user.role == AppConstants.roleAdmin) {
-                  // Navigate to admin dashboard
                   Navigator.pushAndRemoveUntil(
                     context,
                     MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+                    (route) => false,
+                  );
+                } else if (user.role == AppConstants.roleStaff) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const StaffDashboardScreen()),
                     (route) => false,
                   );
                 } else {

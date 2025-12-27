@@ -1,12 +1,12 @@
 class ApiConstants {
   // Base URL - Update this with your backend URL
-  static const String baseUrl = 'http://192.168.1.36:6500/api';
+  static const String baseUrl = 'http://192.168.0.107:6500/api';
 
   // ------------- AWS URL--------------
   // static const String baseUrl = 'http://16.171.146.254:6500/api';
   // static const String baseUrl = 'https://apartment-sync-backend.onrender.com/api';
   // Socket.IO
-  static const String socketUrl = 'http://192.168.1.36:6500';
+  static const String socketUrl = 'http://192.168.0.107:6500';
 
   // ------------- AWS URL--------------
   // static const String socketUrl = 'http://16.171.146.254:6500';
@@ -43,6 +43,24 @@ class ApiConstants {
   static const String adminUsers = '/admin/users';
   static const String adminBuildingDetails = '/admin/building-details';
   static const String adminAvailableFlats = '/admin/available-flats';
+  
+  // Helper method to get flat details endpoint
+  static String getFlatDetails(String buildingCode, int floorNumber, String flatNumber) {
+    return '/admin/flats/$buildingCode/$floorNumber/$flatNumber';
+  }
+  
+  // Staff Endpoints
+  static const String staffDashboard = '/staff/dashboard';
+  static const String staffBuildings = '/staff/buildings';
+  static const String staffBuildingDetails = '/staff/building-details';
+  
+  // Visitor Endpoints
+  static const String visitors = '/visitors';
+  
+  // Helper method to change flat status endpoint
+  static String changeFlatStatus(String buildingCode, int floorNumber, String flatNumber) {
+    return '/admin/flats/$buildingCode/$floorNumber/$flatNumber/status';
+  }
 
   // Helper method to add buildingCode query param
   static String addBuildingCode(String endpoint, String? buildingCode) {
@@ -60,17 +78,29 @@ class ApiConstants {
         .toString();
   }
 
-  // Staff Endpoints
-  static const String staffDashboard = '/staff/dashboard';
+  // Staff Endpoints (additional)
   static const String staffAssignedComplaints = '/staff/assigned-complaints';
+  static const String adminStaff = '/admin/staff';
+  static const String adminStaffOnboard = '/admin/staff/onboard';
+  static String adminStaffVerifyIdentity(String staffId) =>
+      '/admin/staff/$staffId/verify-identity';
+  static const String visitorsOverdue = '/visitors/overdue';
+  static String visitorById(String id) => '/visitors/$id';
+  static String visitorCheckIn(String id) => '/visitors/$id/check-in';
+  static String visitorCheckOut(String id) => '/visitors/$id/check-out';
+  static String visitorGenerateQR(String id) => '/visitors/$id/generate-qr';
+  static String visitorGenerateOTP(String id) => '/visitors/$id/generate-otp';
 
   // Chat Endpoints
-  static const String chats = '/chats';
-  static const String chatMessages = '/chats'; // /chats/:chatId/messages
-  static const String chatPersonal =
-      '/chats/personal'; // /chats/personal/:userId
-  static const String chatCommunity =
-      '/chats/community'; // /chats/community/:apartmentCode
+  static const String chatCommunity = '/chats/community';
+  static const String chatCommunityMessage = '/chats/community/message';
+  static const String chatPrivate = '/chats/private';
+  static String chatPrivateWithUser(String userId) => '/chats/private/$userId';
+  static String chatPrivateMessage(String chatId) => '/chats/private/$chatId/message';
+  static String chatMessages(String chatId) => '/chats/$chatId/messages';
+  static String chatMarkRead(String chatId) => '/chats/$chatId/read';
+  static String chatDeleteMessage(String messageId) => '/chats/message/$messageId';
+  static String chatReportMessage(String messageId) => '/chats/message/$messageId/report';
   static const String chatResidents = '/chats/residents';
   static const String uploadChatMedia = '/chats/upload-media';
 

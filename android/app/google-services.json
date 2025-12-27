@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "254489878100",
-    "project_id": "apartmentsync-c3174",
-    "storage_bucket": "apartmentsync-c3174.firebasestorage.app"
+    "project_number": "544274445514",
+    "project_id": "apartment-sync",
+    "storage_bucket": "apartment-sync.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:254489878100:android:699a215f1dcf9cbee317c1",
+        "mobilesdk_app_id": "1:544274445514:android:ccd7e8369c0607d99cf033",
         "android_client_info": {
           "package_name": "com.apartmentsync.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAPuqvLKvRQp22LDs15BD_md_fVqCjr9BM"
+          "current_key": "AIzaSyDFhooUonRglDyu_5qHBv-Zfe_FDkyWeaw"
         }
       ],
       "services": {

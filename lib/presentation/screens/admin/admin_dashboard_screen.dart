@@ -1,16 +1,33 @@
 import '../../../core/imports/app_imports.dart';
-import '../auth/login_screen.dart';
+import '../auth/role_selection_screen.dart';
 import 'create_building_screen.dart';
 import 'create_building_comprehensive_screen.dart';
+import 'create_apartment_flow_screen.dart';
 import 'create_user_screen.dart';
+import 'create_staff_screen.dart';
 import 'building_details_screen.dart';
+import 'apartment_build_view_screen.dart';
 import 'users_management_screen.dart';
-import 'complaints_management_screen.dart';
+import 'complaints_management_screen.dart' show ComplaintsManagementScreen, ComplaintsManagementScreenState;
 import 'settings_screen.dart';
-import '../chat/chat_list_screen.dart';
+import '../chat/premium_chat_list_screen.dart';
 import '../home/tabs/news_tab_screen.dart';
 import '../profile/profile_screen.dart';
+import '../../widgets/premium_bottom_nav.dart';
+import '../../widgets/contextual_app_bar.dart';
 import 'dart:convert';
+
+class _DrawerItem {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  _DrawerItem({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+}
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -26,6 +43,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<Map<String, dynamic>> _allBuildings = [];
   String? _selectedBuildingCode;
   bool _isLoading = true;
+  final GlobalKey<State<ComplaintsManagementScreen>> _complaintsKey = GlobalKey();
 
   @override
   void initState() {
@@ -179,128 +197,409 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _getBodyForIndex(int index) {
+    Widget body;
     switch (index) {
-      case 0:
-        return _isLoading
+      case 0: // Dashboard
+        body = _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _buildDashboard();
-      case 1:
-        return const UsersManagementScreen();
-      case 2:
-        return const ComplaintsManagementScreen();
-      case 3:
-        return const NewsTabScreen();
-      case 4:
-        return const ChatListScreen();
-      case 5:
-        return const ProfileScreen();
+        break;
+      case 1: // Users
+        body = const UsersManagementScreen();
+        break;
+      case 2: // News
+        body = const NewsTabScreen();
+        break;
+      case 3: // Chat
+        body = const PremiumChatListScreen();
+        break;
+      case 4: // Profile
+        body = const ProfileScreen();
+        break;
       default:
-        return _isLoading
+        body = _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _buildDashboard();
     }
+
+    // Add fade transition with proper constraints
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.1, 0),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOut,
+            )),
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        key: ValueKey<int>(index),
+        constraints: const BoxConstraints.expand(),
+        child: body,
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    final buildingName = _selectedBuildingCode != null && _allBuildings.isNotEmpty
+        ? _allBuildings.firstWhere(
+            (b) => b['code'] == _selectedBuildingCode,
+            orElse: () => {'name': 'Select Building'},
+          )['name'] ?? 'Select Building'
+        : null;
+
+    switch (_currentIndex) {
+      case 0: // Dashboard
+        return ContextualAppBar(
+          type: AppBarType.dashboard,
+          title: 'Admin Dashboard',
+          subtitle: buildingName,
+          leading: Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+          customActions: [
+            if (_allBuildings.isNotEmpty)
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.apartment),
+                tooltip: 'Select Building',
+                onSelected: (String code) {
+                  if (code == 'add_new') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const CreateApartmentFlowScreen(),
+                      ),
+                    ).then((_) => _loadDashboardData());
+                  } else {
+                    _saveSelectedBuilding(code);
+                    _loadDashboardData();
+                  }
+                },
+                itemBuilder: (BuildContext context) {
+                  return [
+                    ..._allBuildings.map((building) {
+                      final isSelected = building['code'] == _selectedBuildingCode;
+                      return PopupMenuItem<String>(
+                        value: building['code'],
+                        child: Row(
+                          children: [
+                            if (isSelected)
+                              const Icon(Icons.check, color: AppColors.primary, size: 20)
+                            else
+                              const SizedBox(width: 20),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    building['name'] ?? 'Unknown',
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                  Text(
+                                    building['code'] ?? '',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem<String>(
+                      value: 'add_new',
+                      child: Row(
+                        children: [
+                          Icon(Icons.add, color: AppColors.primary),
+                          SizedBox(width: 8),
+                          Text('Add New Building'),
+                        ],
+                      ),
+                    ),
+                  ];
+                },
+              ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: () async {
+                print('🖱️ [FLUTTER] Logout button clicked');
+                await StorageService.remove(AppConstants.tokenKey);
+                await StorageService.remove(AppConstants.userKey);
+                ApiService.setToken(null);
+                print('✅ [FLUTTER] Logged out successfully');
+                if (mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
+                    (route) => false,
+                  );
+                }
+              },
+            ),
+          ],
+        );
+
+      case 1: // Users
+        return ContextualAppBar(
+          type: AppBarType.users,
+          title: 'Users Management',
+        );
+
+      case 2: // News
+        return ContextualAppBar(
+          type: AppBarType.news,
+          title: 'News',
+          onSearch: () {
+            // Search action
+          },
+        );
+
+      case 3: // Chat
+        return ContextualAppBar(
+          type: AppBarType.chat,
+          title: 'Chat',
+          onAdd: () {
+            // New chat action
+          },
+        );
+
+      case 4: // Profile
+        return ContextualAppBar(
+          type: AppBarType.profile,
+          title: 'Profile',
+          onEdit: () {
+            // Edit profile action
+          },
+        );
+
+      default:
+        return ContextualAppBar(
+          type: AppBarType.dashboard,
+          title: 'Admin Dashboard',
+        );
+    }
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            // Drawer Header
+            DrawerHeader(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.primary,
+                    AppColors.primaryDark,
+                  ],
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    child: const Icon(
+                      Icons.admin_panel_settings,
+                      color: AppColors.primary,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Admin Panel',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (_selectedBuildingCode != null && _allBuildings.isNotEmpty)
+                    Text(
+                      _allBuildings.firstWhere(
+                        (b) => b['code'] == _selectedBuildingCode,
+                        orElse: () => {'name': ''},
+                      )['name'] ?? '',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            
+            // Primary Actions Section
+            _buildDrawerSection(
+              title: 'Management',
+              items: [
+                _DrawerItem(
+                  icon: Icons.description,
+                  title: 'Complaints',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ComplaintsManagementScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.bar_chart,
+                  title: 'Reports',
+                  onTap: () {
+                    Navigator.pop(context);
+                    // TODO: Navigate to reports
+                    AppMessageHandler.showInfo(context, 'Reports coming soon');
+                  },
+                ),
+              ],
+            ),
+            
+            const Divider(),
+            
+            // Settings Section
+            _buildDrawerSection(
+              title: 'Settings',
+              items: [
+                _DrawerItem(
+                  icon: Icons.settings,
+                  title: 'Settings',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.security,
+                  title: 'Permissions',
+                  onTap: () {
+                    Navigator.pop(context);
+                    // TODO: Navigate to permissions
+                    AppMessageHandler.showInfo(context, 'Permissions coming soon');
+                  },
+                ),
+              ],
+            ),
+            
+            const Divider(),
+            
+            // Support Section
+            _buildDrawerSection(
+              title: 'Support',
+              items: [
+                _DrawerItem(
+                  icon: Icons.help_outline,
+                  title: 'Help & Support',
+                  onTap: () {
+                    Navigator.pop(context);
+                    // TODO: Navigate to help
+                    AppMessageHandler.showInfo(context, 'Help & Support coming soon');
+                  },
+                ),
+              ],
+            ),
+            
+            const Divider(),
+            
+            // Logout
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text(
+                'Logout',
+                style: TextStyle(color: Colors.red),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                await StorageService.remove(AppConstants.tokenKey);
+                await StorageService.remove(AppConstants.userKey);
+                ApiService.setToken(null);
+                if (mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
+                    (route) => false,
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDrawerSection({
+    required String title,
+    required List<_DrawerItem> items,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textSecondary,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        ...items.map((item) => ListTile(
+              leading: Icon(item.icon, color: AppColors.primary),
+              title: Text(item.title),
+              onTap: item.onTap,
+            )),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Admin Dashboard'),
-            if (_selectedBuildingCode != null && _allBuildings.isNotEmpty)
-              Text(
-                _allBuildings.firstWhere(
-                  (b) => b['code'] == _selectedBuildingCode,
-                  orElse: () => {'name': 'Select Building'},
-                )['name'] ?? 'Select Building',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
-              ),
-          ],
-        ),
-        backgroundColor: AppColors.primary,
-        actions: [
-          // Building Selector
-          if (_allBuildings.isNotEmpty)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.apartment),
-              tooltip: 'Select Building',
-              onSelected: (String code) {
-                _saveSelectedBuilding(code);
-                _loadDashboardData();
-              },
-              itemBuilder: (BuildContext context) {
-                return [
-                  ..._allBuildings.map((building) {
-                    final isSelected = building['code'] == _selectedBuildingCode;
-                    return PopupMenuItem<String>(
-                      value: building['code'],
-                      child: Row(
-                        children: [
-                          if (isSelected)
-                            const Icon(Icons.check, color: AppColors.primary, size: 20)
-                          else
-                            const SizedBox(width: 20),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  building['name'] ?? 'Unknown',
-                                  style: TextStyle(
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  ),
-                                ),
-                                Text(
-                                  building['code'] ?? '',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  const PopupMenuDivider(),
-                  PopupMenuItem<String>(
-                    value: 'add_new',
-                    child: Row(
-                      children: [
-                        const Icon(Icons.add, color: AppColors.primary),
-                        const SizedBox(width: 8),
-                        Text('Add New Building'),
-                      ],
-                    ),
-                  ),
-                ];
-              },
-            ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              print('🖱️ [FLUTTER] Logout button clicked');
-              await StorageService.remove(AppConstants.tokenKey);
-              await StorageService.remove(AppConstants.userKey);
-              ApiService.setToken(null);
-              print('✅ [FLUTTER] Logged out successfully');
-              if (mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (route) => false,
-                );
-              }
-            },
-          ),
-        ],
+      appBar: _buildAppBar(),
+      drawer: _buildDrawer(),
+      body: SafeArea(
+        child: _getBodyForIndex(_currentIndex),
       ),
-      body: _getBodyForIndex(_currentIndex),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: PremiumBottomNav(
         currentIndex: _currentIndex,
         onTap: (index) {
           print('🖱️ [FLUTTER] Admin tab changed to index: $index');
@@ -308,34 +607,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _currentIndex = index;
           });
         },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: AppColors.primary,
-        unselectedItemColor: AppColors.textLight,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people),
-            label: 'Users',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.description),
-            label: 'Complaints',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.article_outlined),
-            label: 'News',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            label: 'Chat',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Profile',
-          ),
+          NavItem(icon: Icons.dashboard, label: 'Dashboard'),
+          NavItem(icon: Icons.people, label: 'Users'),
+          NavItem(icon: Icons.article_outlined, label: 'News'),
+          NavItem(icon: Icons.chat_bubble_outline, label: 'Chat'),
+          NavItem(icon: Icons.person, label: 'Profile'),
         ],
       ),
     );
@@ -376,7 +653,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const CreateBuildingComprehensiveScreen(),
+                      builder: (_) => const CreateApartmentFlowScreen(),
                     ),
                   );
                 },
@@ -624,7 +901,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const CreateBuildingComprehensiveScreen(),
+                      builder: (_) => const CreateApartmentFlowScreen(),
                     ),
                   ).then((_) => _loadDashboardData());
                 },
@@ -644,6 +921,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 },
               ),
               _ActionCard(
+                title: 'Apartment Build View',
+                icon: Icons.grid_view,
+                color: AppColors.warning,
+                onTap: () {
+                  print('🖱️ [FLUTTER] Apartment Build View button clicked');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ApartmentBuildViewScreen(
+                        buildingCode: _selectedBuildingCode,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              _ActionCard(
                 title: 'Create User',
                 icon: Icons.person_add,
                 color: AppColors.success,
@@ -655,6 +948,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       builder: (_) => const CreateUserScreen(),
                     ),
                   );
+                },
+              ),
+              _ActionCard(
+                title: 'Create Staff',
+                icon: Icons.badge,
+                color: AppColors.warning,
+                onTap: () {
+                  print('🖱️ [FLUTTER] Create Staff button clicked');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CreateStaffScreen(),
+                    ),
+                  ).then((_) => _loadDashboardData());
                 },
               ),
               _ActionCard(

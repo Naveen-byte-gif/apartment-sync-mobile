@@ -1,7 +1,7 @@
 import '../../../core/imports/app_imports.dart';
 import '../../../data/models/user_data.dart';
 import 'dart:convert';
-import '../auth/login_screen.dart';
+import '../auth/role_selection_screen.dart';
 import 'edit_profile_screen.dart';
 
 class StaffProfileScreen extends StatefulWidget {
@@ -450,7 +450,7 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
           (route) => false,
         );
       }

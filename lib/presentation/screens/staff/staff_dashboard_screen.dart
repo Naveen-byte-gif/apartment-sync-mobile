@@ -1,8 +1,9 @@
 import '../../../core/imports/app_imports.dart';
-import '../auth/login_screen.dart';
+import '../auth/role_selection_screen.dart';
 import '../home/tabs/news_tab_screen.dart';
 import '../home/tabs/chat_tab_screen.dart';
 import '../profile/profile_screen.dart';
+import 'visitor_checkin_screen.dart';
 
 class StaffDashboardScreen extends StatefulWidget {
   const StaffDashboardScreen({super.key});
@@ -110,6 +111,48 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
                   value: '${_dashboardData?['totalComplaints'] ?? 0}',
                   icon: Icons.list,
                   color: Colors.orange,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          // Quick Actions
+          const Text(
+            'Quick Actions',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Card(
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const VisitorCheckInScreen(),
+                        ),
+                      ).then((_) => _loadDashboardData());
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          Icon(Icons.qr_code_scanner, size: 40, color: AppColors.primary),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Visitor Check-In',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -225,7 +268,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     if (mounted) {
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
         (route) => false,
       );
     }

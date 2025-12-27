@@ -2,7 +2,7 @@ import '../../../core/imports/app_imports.dart';
 import '../../../data/models/user_data.dart';
 import '../../screens/complaints/resident_complaints_screen.dart';
 import '../../screens/notices/notices_screen.dart';
-import '../../screens/auth/login_screen.dart';
+import '../../screens/auth/role_selection_screen.dart';
 import 'dart:convert';
 
 class ResidentHomeScreen extends StatefulWidget {
@@ -96,7 +96,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
         if (mounted) {
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
             (route) => false,
           );
         }

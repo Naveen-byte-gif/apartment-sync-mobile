@@ -1,6 +1,6 @@
 import '../../core/imports/app_imports.dart';
 import '../../core/constants/app_constants.dart';
-import 'auth/login_screen.dart';
+import 'auth/role_selection_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -71,7 +71,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const LoginScreen(),
+                              builder: (_) => const RoleSelectionScreen(),
                             ),
                           );
                         }

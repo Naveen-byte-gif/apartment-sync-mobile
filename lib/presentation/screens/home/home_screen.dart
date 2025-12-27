@@ -5,7 +5,7 @@ import '../complaints/complaints_screen.dart';
 import '../notices/notices_screen.dart';
 import '../profile/profile_screen.dart';
 import 'resident_home_screen.dart';
-import '../auth/login_screen.dart';
+import '../auth/role_selection_screen.dart';
 import 'tabs/news_tab_screen.dart';
 import 'tabs/payments_tab_screen.dart';
 import 'tabs/chat_tab_screen.dart';
@@ -168,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (mounted) {
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
                   (route) => false,
                 );
               }

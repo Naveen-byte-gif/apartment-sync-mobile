@@ -11,10 +11,15 @@ class AppMessageHandler {
     bool showDialog = false,
     VoidCallback? onSuccess,
     VoidCallback? onError,
+    int? statusCode,
   }) {
     final success = response['success'] ?? false;
-    final message = response['message'] ?? 
-                   (success ? 'Operation completed successfully' : 'An error occurred');
+    String message = response['message'] ?? 
+                    response['error'] ??
+                    (success ? 'Operation completed successfully' : 'An error occurred');
+
+    // Clean up message - remove any extra formatting
+    message = message.trim();
 
     if (success) {
       if (showDialog) {
@@ -29,7 +34,11 @@ class AppMessageHandler {
         onSuccess?.call();
       }
     } else {
-      if (showDialog) {
+      // For important errors (400, 409, etc.), show as dialog by default
+      final shouldShowDialog = showDialog || 
+                               statusCode != null && (statusCode >= 400 && statusCode < 500);
+      
+      if (shouldShowDialog) {
         ErrorDialog.show(
           context,
           title: 'Error',

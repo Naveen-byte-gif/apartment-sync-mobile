@@ -2,8 +2,9 @@ import '../../core/imports/app_imports.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../../data/models/user_data.dart';
+import '../../core/services/notification_service.dart';
 import 'onboarding_screen.dart';
-import 'auth/login_screen.dart';
+import 'auth/role_selection_screen.dart';
 import 'home/home_screen.dart';
 import 'admin/admin_dashboard_screen.dart';
 import 'staff/staff_dashboard_screen.dart';
@@ -76,6 +77,10 @@ class _SplashScreenState extends State<SplashScreen> {
                     builder: (_) => const AdminDashboardScreen(),
                   ),
                 );
+                // Handle pending notification after navigation
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  NotificationService.handlePendingNotification(context);
+                });
                 return;
               } else if (user.role == 'staff') {
                 print('👔 [SPLASH] Navigating to Staff Dashboard');
@@ -85,6 +90,10 @@ class _SplashScreenState extends State<SplashScreen> {
                     builder: (_) => const StaffDashboardScreen(),
                   ),
                 );
+                // Handle pending notification after navigation
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  NotificationService.handlePendingNotification(context);
+                });
                 return;
               } else {
                 print('🏠 [SPLASH] Navigating to Home Screen');
@@ -92,6 +101,10 @@ class _SplashScreenState extends State<SplashScreen> {
                   context,
                   MaterialPageRoute(builder: (_) => const HomeScreen()),
                 );
+                // Handle pending notification after navigation
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  NotificationService.handlePendingNotification(context);
+                });
                 return;
               }
             } catch (e) {
@@ -172,22 +185,22 @@ class _SplashScreenState extends State<SplashScreen> {
         }
       }
 
-      // Default to login if no token or validation failed
-      print('🔐 [SPLASH] Navigating to Login Screen');
+      // Default to role selection if no token or validation failed
+      print('🔐 [SPLASH] Navigating to Role Selection Screen');
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
         );
       }
     } catch (e, stackTrace) {
       print('❌ [SPLASH] Fatal error in _checkFirstLaunch: $e');
       print('❌ [SPLASH] Stack trace: $stackTrace');
-      // Always navigate to login on fatal error
+      // Always navigate to role selection on fatal error
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
         );
       }
     }

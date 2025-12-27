@@ -14,13 +14,6 @@ import 'presentation/providers/chat_provider.dart';
 import 'presentation/providers/story_provider.dart';
 import 'presentation/providers/tts_provider.dart';
 
-// Background message handler
-@pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-  print('📨 Background message: ${message.notification?.title}');
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -66,6 +59,7 @@ Future<void> _initializeHeavyServicesInBackground() async {
     print('✅ Firebase initialized successfully');
 
     // Set background message handler only if Firebase is initialized
+    // The handler is defined in notification_service.dart
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   } catch (e) {
     print('⚠️ Firebase initialization failed: $e');
@@ -154,6 +148,7 @@ class MyApp extends StatelessWidget {
         title: 'ApartmentSync',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
+        navigatorKey: NotificationService.navigatorKey,
         home: const SplashScreen(),
         builder: (context, child) {
           print('🎨 [MyApp] MaterialApp builder called');

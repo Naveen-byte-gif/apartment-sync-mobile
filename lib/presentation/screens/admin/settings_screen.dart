@@ -1,5 +1,5 @@
 import '../../../core/imports/app_imports.dart';
-import '../auth/login_screen.dart';
+import '../auth/role_selection_screen.dart';
 import 'dart:convert';
 
 class SettingsScreen extends StatefulWidget {
@@ -389,7 +389,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
           (route) => false,
         );
       }

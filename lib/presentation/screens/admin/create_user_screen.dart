@@ -21,6 +21,8 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
   int? _selectedFloor;
   String? _selectedFlatNumber;
   String? _selectedFlatType;
+  String _residentType = 'owner'; // 'owner' or 'tenant'
+  bool _isPrimaryResident = false;
 
   List<Map<String, dynamic>> _availableFlats = [];
   bool _isLoadingBuildings = false;
@@ -154,12 +156,16 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
         }
         userData['flatNumber'] = _selectedFlatNumber;
         userData['flatType'] = _selectedFlatType;
+        userData['residentType'] = _residentType;
+        userData['isPrimaryResident'] = _isPrimaryResident;
         print('🏠 [FLUTTER] Adding flat details to userData:');
         print(
           '  - floorNumber: ${userData['floorNumber']} (type: ${userData['floorNumber'].runtimeType})',
         );
         print('  - flatNumber: ${userData['flatNumber']}');
         print('  - flatType: ${userData['flatType']}');
+        print('  - residentType: ${userData['residentType']}');
+        print('  - isPrimaryResident: ${userData['isPrimaryResident']}');
       }
 
       // Add building code to request
@@ -574,6 +580,59 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                                       ),
                                     ),
                                   ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              // Resident Type Selection
+                              DropdownButtonFormField<String>(
+                                value: _residentType,
+                                decoration: const InputDecoration(
+                                  labelText: 'Resident Type *',
+                                  prefixIcon: Icon(Icons.person_outline),
+                                  border: OutlineInputBorder(),
+                                  helperText: 'Owner or Tenant',
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'owner',
+                                    child: Text('Owner'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'tenant',
+                                    child: Text('Tenant'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _residentType = value ?? 'owner';
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              // Primary Resident Checkbox
+                              Card(
+                                color: AppColors.warning.withOpacity(0.1),
+                                child: SwitchListTile(
+                                  title: const Text(
+                                    'Primary Resident (Head of Family)',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  subtitle: const Text(
+                                    'Only one primary resident per flat. This person is the main contact.',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                  value: _isPrimaryResident,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _isPrimaryResident = value;
+                                    });
+                                  },
+                                  secondary: Icon(
+                                    Icons.person_pin,
+                                    color: _isPrimaryResident
+                                        ? AppColors.warning
+                                        : Colors.grey,
+                                  ),
                                 ),
                               ),
                             ],

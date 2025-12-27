@@ -747,7 +747,7 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
               
               const SizedBox(height: 16),
               
-              // Building Configuration
+              // Building Configuration - Simplified
               _buildSectionCard(
                 title: '🏢 Building Configuration',
                 icon: Icons.layers,
@@ -762,6 +762,7 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
                             labelText: 'Total Floors *',
                             prefixIcon: Icon(Icons.layers),
                             border: OutlineInputBorder(),
+                            helperText: 'Number of floors in building',
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) return 'Required';
@@ -780,6 +781,7 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
                             labelText: 'Flats per Floor *',
                             prefixIcon: Icon(Icons.home),
                             border: OutlineInputBorder(),
+                            helperText: 'Flats on each floor',
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) return 'Required';
@@ -790,6 +792,45 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.auto_awesome, color: AppColors.primary, size: 20),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Auto-Generated Structure',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'System will automatically generate flat numbers:\n'
+                          '• Floor 1 → 101, 102, 103...\n'
+                          '• Floor 2 → 201, 202, 203...\n'
+                          '• Floor 3 → 301, 302, 303...\n\n'
+                          'Flat types, ownership, and occupancy can be configured later in Building Details.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

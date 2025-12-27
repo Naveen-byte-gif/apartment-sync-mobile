@@ -1,5 +1,6 @@
 import '../../../core/imports/app_imports.dart';
 import '../../../core/services/notification_service.dart';
+import '../../../core/utils/phone_formatter.dart';
 import '../../providers/auth_provider.dart';
 import '../home/home_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
@@ -9,6 +10,7 @@ import 'admin_login_screen.dart';
 import 'otp_verification_screen.dart';
 import '../../../data/models/user_data.dart';
 import 'dart:convert';
+import 'package:flutter/services.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -32,10 +34,12 @@ class _LoginScreenState extends State<LoginScreen> {
     print('📱 [FLUTTER] Identifier: $identifier');
 
     // Check if it's a phone number (10 digits) or email
-    final isPhone = RegExp(r'^[6-9]\d{9}$').hasMatch(identifier);
+    final cleanedPhone = PhoneFormatter.formatForAPI(identifier);
+    final isPhone = PhoneFormatter.isValidIndianPhone(cleanedPhone);
     print('📱 [FLUTTER] Is Phone: $isPhone');
 
     if (!isPhone && !identifier.contains('@')) {
+      HapticFeedback.mediumImpact();
       AppMessageHandler.showError(
         context,
         'Please enter a valid phone number or email',
@@ -43,20 +47,22 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (isPhone && identifier.length != 10) {
+    if (isPhone && !PhoneFormatter.isValidIndianPhone(cleanedPhone)) {
+      HapticFeedback.mediumImpact();
       AppMessageHandler.showError(
         context,
-        'Please enter a valid 10-digit phone number',
+        'Please enter a valid 10-digit Indian phone number',
       );
       return;
     }
 
     setState(() => _isLoading = true);
+    HapticFeedback.lightImpact();
 
     try {
       print('📤 [FLUTTER] Sending OTP request...');
       final response = await ApiService.post(ApiConstants.sendOTP, {
-        'phoneNumber': isPhone ? identifier : null,
+        'phoneNumber': isPhone ? cleanedPhone : null,
         'email': !isPhone ? identifier : null,
         'purpose': 'login',
       });
@@ -70,11 +76,12 @@ class _LoginScreenState extends State<LoginScreen> {
           response,
           onSuccess: () {
             if (isPhone) {
+              HapticFeedback.mediumImpact();
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => OTPVerificationScreen(
-                    phoneNumber: identifier,
+                    phoneNumber: cleanedPhone,
                     purpose: 'login',
                   ),
                 ),
@@ -84,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
+      HapticFeedback.mediumImpact();
       if (mounted) {
         AppMessageHandler.handleError(context, e);
       }

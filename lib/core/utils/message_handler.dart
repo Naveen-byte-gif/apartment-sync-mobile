@@ -191,5 +191,33 @@ class AppMessageHandler {
       WarningSnackBar.show(context, message);
     }
   }
+
+  /// Get error message from error object
+  static String? getErrorMessage(dynamic error) {
+    if (error is Map<String, dynamic>) {
+      return error['message'] ?? error['error'];
+    } else if (error is String) {
+      return error;
+    } else if (error.toString().contains('SocketException') ||
+               error.toString().contains('Failed host lookup')) {
+      return 'No internet connection. Please check your network.';
+    } else if (error.toString().contains('TimeoutException') ||
+               error.toString().contains('Timeout')) {
+      return 'Request timeout. Please try again.';
+    } else if (error.toString().contains('401') ||
+               error.toString().contains('Unauthorized')) {
+      return 'Unauthorized. Please login again.';
+    } else if (error.toString().contains('403') ||
+               error.toString().contains('Forbidden')) {
+      return 'Access denied. You don\'t have permission.';
+    } else if (error.toString().contains('404') ||
+               error.toString().contains('Not Found')) {
+      return 'Resource not found.';
+    } else if (error.toString().contains('500') ||
+               error.toString().contains('Internal Server Error')) {
+      return 'Server error. Please try again later.';
+    }
+    return error.toString();
+  }
 }
 

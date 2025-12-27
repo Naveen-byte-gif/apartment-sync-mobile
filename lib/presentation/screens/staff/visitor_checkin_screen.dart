@@ -47,29 +47,29 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
         final visitors = List<Map<String, dynamic>>.from(
           visitorsResponse['data']?['visitors'] ?? [],
         );
-        
+
         final visitor = visitors.firstWhere(
           (v) => v['qrCode']?['code'] == qrCode,
           orElse: () => {},
         );
-        
+
         if (visitor.isEmpty) {
           AppMessageHandler.showError(context, 'Invalid QR code');
           setState(() => _isLoading = false);
           return;
         }
-        
+
         final visitorId = visitor['_id'];
         final response = await ApiService.post(
           ApiConstants.visitorCheckIn(visitorId),
-          {
-            'checkInMethod': 'QR Code',
-            'verificationCode': qrCode,
-          },
+          {'checkInMethod': 'QR Code', 'verificationCode': qrCode},
         );
-        
+
         if (response['success'] == true) {
-          AppMessageHandler.showSuccess(context, 'Visitor checked in successfully');
+          AppMessageHandler.showSuccess(
+            context,
+            'Visitor checked in successfully',
+          );
           Navigator.pop(context, true);
         } else {
           AppMessageHandler.handleResponse(context, response);
@@ -91,29 +91,29 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
         final visitors = List<Map<String, dynamic>>.from(
           visitorsResponse['data']?['visitors'] ?? [],
         );
-        
+
         final visitor = visitors.firstWhere(
           (v) => v['otp']?['code'] == otp && v['status'] != 'Checked In',
           orElse: () => {},
         );
-        
+
         if (visitor.isEmpty) {
           AppMessageHandler.showError(context, 'Invalid or expired OTP');
           setState(() => _isLoading = false);
           return;
         }
-        
+
         final visitorId = visitor['_id'];
         final response = await ApiService.post(
           ApiConstants.visitorCheckIn(visitorId),
-          {
-            'checkInMethod': 'OTP',
-            'verificationCode': otp,
-          },
+          {'checkInMethod': 'OTP', 'verificationCode': otp},
         );
-        
+
         if (response['success'] == true) {
-          AppMessageHandler.showSuccess(context, 'Visitor checked in successfully');
+          AppMessageHandler.showSuccess(
+            context,
+            'Visitor checked in successfully',
+          );
           Navigator.pop(context, true);
         } else {
           AppMessageHandler.handleResponse(context, response);
@@ -182,7 +182,7 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            
+
             // QR Code Scanner
             if (_checkInMethod == 'QR Code')
               Card(
@@ -210,9 +210,11 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
                               ? MobileScanner(
                                   controller: _scannerController!,
                                   onDetect: (capture) {
-                                    final List<Barcode> barcodes = capture.barcodes;
+                                    final List<Barcode> barcodes =
+                                        capture.barcodes;
                                     for (final barcode in barcodes) {
-                                      if (barcode.rawValue != null && !_isLoading) {
+                                      if (barcode.rawValue != null &&
+                                          !_isLoading) {
                                         _checkInWithQR(barcode.rawValue!);
                                         break;
                                       }
@@ -223,7 +225,11 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.camera_alt, size: 48, color: Colors.grey),
+                                      Icon(
+                                        Icons.camera_alt,
+                                        size: 48,
+                                        color: Colors.grey,
+                                      ),
                                       SizedBox(height: 8),
                                       Text(
                                         'Camera not available',
@@ -267,7 +273,7 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
                   ),
                 ),
               ),
-            
+
             // OTP Input
             if (_checkInMethod == 'OTP')
               Card(
@@ -315,7 +321,7 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
                   ),
                 ),
               ),
-            
+
             // Manual Entry
             if (_checkInMethod == 'Manual')
               Card(
@@ -348,7 +354,7 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
                   ),
                 ),
               ),
-            
+
             if (_isLoading)
               const Padding(
                 padding: EdgeInsets.all(16.0),
@@ -360,4 +366,3 @@ class _VisitorCheckInScreenState extends State<VisitorCheckInScreen> {
     );
   }
 }
-

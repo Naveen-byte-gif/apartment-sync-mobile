@@ -2,7 +2,10 @@ import '../../../core/imports/app_imports.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../data/models/user_data.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/utils/phone_formatter.dart';
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import '../home/home_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
 import '../staff/staff_dashboard_screen.dart';
@@ -33,6 +36,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
   bool _isResending = false;
   int _resendTimer = 60;
   String? _errorMessage;
+  Timer? _timer;
 
   @override
   void initState() {
@@ -40,15 +44,23 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
     _startResendTimer();
     // Auto-focus first field
     Future.delayed(const Duration(milliseconds: 300), () {
-      _focusNodes[0].requestFocus();
+      if (mounted) {
+        _focusNodes[0].requestFocus();
+      }
     });
   }
 
   void _startResendTimer() {
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted && _resendTimer > 0) {
-        setState(() => _resendTimer--);
-        _startResendTimer();
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        if (_resendTimer > 0) {
+          setState(() => _resendTimer--);
+        } else {
+          timer.cancel();
+        }
+      } else {
+        timer.cancel();
       }
     });
   }
@@ -57,13 +69,33 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
     return _otpControllers.map((controller) => controller.text).join();
   }
 
+  void _clearOTP() {
+    for (var controller in _otpControllers) {
+      controller.clear();
+    }
+    if (mounted) {
+      _focusNodes[0].requestFocus();
+    }
+  }
+
   Future<void> _verifyOTP() async {
     final otp = _getOTP();
     
     if (otp.length != 6) {
       setState(() {
-        _errorMessage = 'Please enter complete OTP';
+        _errorMessage = 'Please enter complete 6-digit OTP';
       });
+      // Haptic feedback
+      HapticFeedback.mediumImpact();
+      return;
+    }
+
+    // Validate OTP contains only digits
+    if (!RegExp(r'^\d{6}$').hasMatch(otp)) {
+      setState(() {
+        _errorMessage = 'OTP must contain only numbers';
+      });
+      HapticFeedback.mediumImpact();
       return;
     }
 
@@ -72,9 +104,12 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       _errorMessage = null;
     });
 
+    // Haptic feedback for verification start
+    HapticFeedback.lightImpact();
+
     try {
       if (widget.purpose == 'registration') {
-        // Registration flow
+        // User registration flow
         final response = await ApiService.post(
           ApiConstants.verifyOTPRegister,
           {
@@ -144,9 +179,74 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
             }
           }
         } else {
+          // Clear OTP on error
+          _clearOTP();
           setState(() {
-            _errorMessage = response['message'] ?? 'Invalid OTP';
+            _errorMessage = response['message'] ?? 'Invalid OTP. Please try again.';
           });
+          HapticFeedback.mediumImpact();
+        }
+      } else if (widget.purpose == 'admin_registration') {
+        // Admin registration flow
+        final response = await ApiService.post(
+          ApiConstants.adminVerifyOTPRegister,
+          {
+            'phoneNumber': widget.phoneNumber,
+            'otp': otp,
+            'fullName': widget.userData?['fullName'],
+            'email': widget.userData?['email'],
+            'password': widget.userData?['password'],
+          },
+        );
+
+        if (response['success'] == true) {
+          final token = response['data']?['token'];
+          final userData = response['data']?['user'];
+
+          if (token != null) {
+            ApiService.setToken(token);
+            await StorageService.setString(AppConstants.tokenKey, token);
+
+            if (userData != null) {
+              await StorageService.setString(
+                AppConstants.userKey,
+                jsonEncode(userData),
+              );
+            }
+
+            // Send FCM token after successful registration
+            try {
+              await NotificationService.sendPendingToken();
+            } catch (e) {
+              print('⚠️ Error sending FCM token after admin registration: $e');
+            }
+
+            if (mounted) {
+              AppMessageHandler.showSuccess(
+                context,
+                response['message'] ?? 'Admin registration successful',
+                onOkPressed: () {
+                  // Connect socket
+                  final user = UserData.fromJson(userData);
+                  SocketService().connect(user.id);
+                  
+                  // Navigate to admin dashboard
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+                    (route) => false,
+                  );
+                },
+              );
+            }
+          }
+        } else {
+          // Clear OTP on error
+          _clearOTP();
+          setState(() {
+            _errorMessage = response['message'] ?? 'Invalid OTP. Please try again.';
+          });
+          HapticFeedback.mediumImpact();
         }
       } else {
         // Login flow
@@ -159,6 +259,8 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
         );
 
         if (response['success'] == true) {
+          // Success haptic feedback
+          HapticFeedback.heavyImpact();
           final token = response['data']?['token'];
           final userData = response['data']?['user'];
 
@@ -218,15 +320,24 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
             }
           }
         } else {
+          // Clear OTP on error
+          _clearOTP();
           setState(() {
-            _errorMessage = response['message'] ?? 'Invalid OTP';
+            _errorMessage = response['message'] ?? 'Invalid OTP. Please try again.';
           });
+          HapticFeedback.mediumImpact();
         }
       }
     } catch (e) {
+      _clearOTP();
       setState(() {
-        _errorMessage = 'Error: ${e.toString()}';
+        _errorMessage = AppMessageHandler.getErrorMessage(e) ?? 'An error occurred. Please try again.';
       });
+      HapticFeedback.mediumImpact();
+      
+      if (mounted) {
+        AppMessageHandler.handleError(context, e);
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -235,12 +346,15 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
   }
 
   Future<void> _resendOTP() async {
-    if (_resendTimer > 0) return;
+    if (_resendTimer > 0 || _isResending) return;
 
     setState(() {
       _isResending = true;
       _errorMessage = null;
     });
+
+    // Haptic feedback
+    HapticFeedback.lightImpact();
 
     try {
       final response = await ApiService.post(
@@ -252,6 +366,9 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       );
 
       if (response['success'] == true) {
+        // Clear current OTP
+        _clearOTP();
+        
         setState(() {
           _resendTimer = 60;
           _isResending = false;
@@ -259,35 +376,65 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
         _startResendTimer();
         
         if (mounted) {
-          AppMessageHandler.showSuccess(context, 'OTP sent successfully');
+          HapticFeedback.mediumImpact();
+          AppMessageHandler.showSuccess(
+            context,
+            'OTP sent successfully to ${PhoneFormatter.formatForDisplay(widget.phoneNumber)}',
+          );
         }
       } else {
         if (mounted) {
           AppMessageHandler.handleResponse(context, response);
         }
         setState(() {
-          _errorMessage = response['message'] ?? 'Failed to resend OTP';
+          _errorMessage = response['message'] ?? 'Failed to resend OTP. Please try again.';
           _isResending = false;
         });
+        HapticFeedback.mediumImpact();
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error: ${e.toString()}';
+        _errorMessage = AppMessageHandler.getErrorMessage(e) ?? 'Failed to resend OTP. Please try again.';
         _isResending = false;
       });
+      HapticFeedback.mediumImpact();
+      
+      if (mounted) {
+        AppMessageHandler.handleError(context, e);
+      }
     }
   }
 
   void _onOTPChanged(int index, String value) {
+    // Only allow digits
+    if (value.isNotEmpty && !RegExp(r'^\d$').hasMatch(value)) {
+      _otpControllers[index].clear();
+      return;
+    }
+
+    // Clear error message when user starts typing
+    if (_errorMessage != null && value.isNotEmpty) {
+      setState(() {
+        _errorMessage = null;
+      });
+    }
+
+    // Move to next field
     if (value.length == 1 && index < 5) {
       _focusNodes[index + 1].requestFocus();
+      HapticFeedback.selectionClick();
     } else if (value.isEmpty && index > 0) {
       _focusNodes[index - 1].requestFocus();
     }
 
     // Auto-verify when all 6 digits are entered
     if (_getOTP().length == 6) {
-      _verifyOTP();
+      // Small delay to ensure all fields are updated
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          _verifyOTP();
+        }
+      });
     }
   }
 
@@ -331,7 +478,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
             const SizedBox(height: 12),
             // Description
             Text(
-              'We sent a 6-digit code to\n${widget.phoneNumber}',
+              'We sent a 6-digit code to\n${PhoneFormatter.formatForDisplay(widget.phoneNumber)}',
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.grey,
@@ -352,6 +499,9 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                     textAlign: TextAlign.center,
                     keyboardType: TextInputType.number,
                     maxLength: 1,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -495,6 +645,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
 
   @override
   void dispose() {
+    _timer?.cancel();
     for (var controller in _otpControllers) {
       controller.dispose();
     }

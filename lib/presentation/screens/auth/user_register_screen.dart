@@ -1,5 +1,7 @@
 import '../../../core/imports/app_imports.dart';
+import '../../../core/utils/phone_formatter.dart';
 import 'otp_verification_screen.dart';
+import 'package:flutter/services.dart';
 
 class UserRegisterScreen extends StatefulWidget {
   const UserRegisterScreen({super.key});
@@ -28,33 +30,43 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
   final List<String> _flatTypes = ['1BHK', '2BHK', '3BHK', '4BHK', 'Duplex', 'Penthouse'];
 
   Future<void> _sendOTP() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_phoneController.text.length != 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 10-digit phone number')),
+    if (!_formKey.currentState!.validate()) {
+      HapticFeedback.mediumImpact();
+      return;
+    }
+
+    final phoneNumber = PhoneFormatter.formatForAPI(_phoneController.text.trim());
+    
+    if (!PhoneFormatter.isValidIndianPhone(phoneNumber)) {
+      HapticFeedback.mediumImpact();
+      AppMessageHandler.showError(
+        context,
+        'Please enter a valid 10-digit Indian phone number',
       );
       return;
     }
 
     setState(() => _isLoading = true);
+    HapticFeedback.lightImpact();
 
     try {
       final response = await ApiService.post(
         ApiConstants.sendOTP,
         {
-          'phoneNumber': _phoneController.text.trim(),
+          'phoneNumber': phoneNumber,
           'purpose': 'registration',
         },
       );
 
       if (response['success'] == true) {
         if (mounted) {
+          HapticFeedback.mediumImpact();
           // Navigate to OTP verification screen
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => OTPVerificationScreen(
-                phoneNumber: _phoneController.text.trim(),
+                phoneNumber: phoneNumber,
                 purpose: 'registration',
                 userData: {
                   'fullName': _fullNameController.text.trim(),
@@ -74,16 +86,20 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
           );
         }
       } else {
+        HapticFeedback.mediumImpact();
         if (mounted) {
           AppMessageHandler.handleResponse(context, response);
         }
       }
     } catch (e) {
+      HapticFeedback.mediumImpact();
       if (mounted) {
         AppMessageHandler.handleError(context, e);
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -134,8 +150,9 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
                   if (value == null || value.isEmpty) {
                     return 'Please enter your phone number';
                   }
-                  if (value.length != 10) {
-                    return 'Please enter a valid 10-digit phone number';
+                  final cleaned = PhoneFormatter.formatForAPI(value);
+                  if (!PhoneFormatter.isValidIndianPhone(cleaned)) {
+                    return 'Please enter a valid 10-digit Indian phone number';
                   }
                   return null;
                 },

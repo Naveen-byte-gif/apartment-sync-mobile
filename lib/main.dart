@@ -24,6 +24,11 @@ void main() async {
     print('❌ [FLUTTER ERROR] Stack: ${details.stack}');
   };
 
+  // CRITICAL: Register background message handler BEFORE runApp
+  // This must be done at the top level before any isolate is created
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  print('✅ [MAIN] Background message handler registered');
+
   // Initialize CRITICAL services that UI needs (fast, shouldn't block)
   print('🔧 [MAIN] Initializing critical services...');
   try {
@@ -40,27 +45,10 @@ void main() async {
     print('⚠️ ApiService initialization failed: $e');
   }
 
-  // CRITICAL: Call runApp IMMEDIATELY after critical services
-  // Heavy services (Firebase, Notifications, TTS) will initialize in background
-  print('🎬 [MAIN] About to call runApp');
-  runApp(const MyApp());
-  print('✅ [MAIN] runApp called successfully');
-
-  // Initialize heavy services AFTER UI is shown (non-blocking)
-  _initializeHeavyServicesInBackground();
-}
-
-Future<void> _initializeHeavyServicesInBackground() async {
-  print('🔧 [MAIN] Starting background service initialization...');
-  
-  // Initialize Firebase (optional - app can run without it)
+  // Initialize Firebase BEFORE runApp (required for FCM)
   try {
     await Firebase.initializeApp();
     print('✅ Firebase initialized successfully');
-
-    // Set background message handler only if Firebase is initialized
-    // The handler is defined in notification_service.dart
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   } catch (e) {
     print('⚠️ Firebase initialization failed: $e');
     print(
@@ -68,6 +56,19 @@ Future<void> _initializeHeavyServicesInBackground() async {
     );
   }
 
+  // CRITICAL: Call runApp IMMEDIATELY after critical services
+  // Notification service will initialize in background
+  print('🎬 [MAIN] About to call runApp');
+  runApp(const MyApp());
+  print('✅ [MAIN] runApp called successfully');
+
+  // Initialize notification service AFTER UI is shown (non-blocking)
+  _initializeNotificationServiceInBackground();
+}
+
+Future<void> _initializeNotificationServiceInBackground() async {
+  print('🔧 [MAIN] Starting notification service initialization...');
+  
   // Initialize notifications (will handle Firebase errors internally)
   try {
     await NotificationService.initialize();
@@ -76,15 +77,15 @@ Future<void> _initializeHeavyServicesInBackground() async {
     print('⚠️ Notification service initialization failed: $e');
   }
 
-  // Initialize TTS service
+  print('✅ [MAIN] Notification service initialization completed');
+  
+  // Initialize TTS service in background
   try {
     await TtsService.initialize();
     print('✅ TTS service initialized');
   } catch (e) {
     print('⚠️ TTS service initialization failed: $e');
   }
-
-  print('✅ [MAIN] All background services initialized');
 }
 
 class MyApp extends StatelessWidget {

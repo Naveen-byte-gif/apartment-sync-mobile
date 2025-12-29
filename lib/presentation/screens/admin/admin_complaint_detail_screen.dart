@@ -1,6 +1,10 @@
 import '../../../core/imports/app_imports.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../data/models/complaint_data.dart';
 
 class AdminComplaintDetailScreen extends StatefulWidget {
   final String complaintId;
@@ -13,14 +17,32 @@ class AdminComplaintDetailScreen extends StatefulWidget {
 
 class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen> {
   Map<String, dynamic>? _complaint;
+  List<Map<String, dynamic>>? _staffList;
   bool _isLoading = true;
   bool _isUpdatingStatus = false;
+  bool _isUploadingMedia = false;
+  bool _isAddingNote = false;
+  bool _isPostingComment = false;
+  final ImagePicker _imagePicker = ImagePicker();
+  final TextEditingController _internalNoteController = TextEditingController();
+  final TextEditingController _commentController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  List<File> _selectedCommentMedia = [];
 
   @override
   void initState() {
     super.initState();
     _loadComplaintDetails();
+    _loadStaffList();
     _setupSocketListeners();
+  }
+
+  @override
+  void dispose() {
+    _internalNoteController.dispose();
+    _commentController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _setupSocketListeners() {
@@ -34,122 +56,50 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
         if (userId != null) {
           socketService.connect(userId);
           
+          // Listen for complaint updates
           socketService.on('complaint_updated', (data) {
-            print('📡 [FLUTTER] Complaint updated event received');
+            print('📡 [FLUTTER] Complaint updated event received: $data');
             if (mounted && (data['complaintId'] == widget.complaintId || 
-                           data['ticketId'] == widget.complaintId)) {
+                           data['ticketId'] == widget.complaintId ||
+                           data['complaint']?['id'] == widget.complaintId)) {
               _loadComplaintDetails();
             }
           });
           
+          // Listen for status updates
           socketService.on('ticket_status_updated', (data) {
-            print('📡 [FLUTTER] Ticket status updated event received');
+            print('📡 [FLUTTER] Ticket status updated event received: $data');
+            if (mounted && (data['complaintId'] == widget.complaintId || 
+                           data['ticketId'] == widget.complaintId ||
+                           data['complaint']?['id'] == widget.complaintId)) {
+              _loadComplaintDetails();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Status updated to ${data['newStatus'] ?? 'new status'}'),
+                    backgroundColor: AppColors.success,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            }
+          });
+
+          // Listen for status change confirmation (when admin makes the change)
+          socketService.on('status_change_confirmation', (data) {
+            print('📡 [FLUTTER] Status change confirmation received: $data');
             if (mounted && (data['complaintId'] == widget.complaintId || 
                            data['ticketId'] == widget.complaintId)) {
               _loadComplaintDetails();
-              // Show notification with admin name and time
-              if (data['updatedBy'] != null && data['updatedAt'] != null) {
-                final updatedBy = data['updatedBy'] as String;
-                final updatedAt = data['updatedAt'] as String;
-                final newStatus = data['newStatus'] as String? ?? '';
-                final oldStatus = data['oldStatus'] as String? ?? '';
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Status Changed: $oldStatus → $newStatus',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.person, size: 14, color: Colors.white70),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Changed by: $updatedBy',
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
-                            ),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.access_time, size: 14, color: Colors.white70),
-                            const SizedBox(width: 4),
-                            Text(
-                              DateFormat('h:mm a').format(DateTime.parse(updatedAt)),
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    backgroundColor: Colors.green.shade700,
-                    duration: const Duration(seconds: 4),
-                  ),
-                );
-              }
             }
           });
-          
-          socketService.on('status_updated', (data) {
-            print('📡 [FLUTTER] Status updated event received');
-            if (mounted && data['complaintId'] == widget.complaintId) {
-              _loadComplaintDetails();
-              // Show notification with admin name and time
-              if (data['updatedBy'] != null && data['updatedAt'] != null) {
-                final updatedBy = data['updatedBy'] as String;
-                final updatedAt = data['updatedAt'] as String;
-                final newStatus = data['newStatus'] as String? ?? '';
-                final oldStatus = data['oldStatus'] as String? ?? '';
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Status Changed: $oldStatus → $newStatus',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.person, size: 14, color: Colors.white70),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Changed by: $updatedBy',
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
-                            ),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.access_time, size: 14, color: Colors.white70),
-                            const SizedBox(width: 4),
-                            Text(
-                              DateFormat('h:mm a').format(DateTime.parse(updatedAt)),
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    backgroundColor: Colors.green.shade700,
-                    duration: const Duration(seconds: 4),
-                  ),
-                );
-              }
-            }
-          });
-          
-          socketService.on('status_change_confirmation', (data) {
-            print('📡 [FLUTTER] Status change confirmation received');
-            if (mounted && data['complaintId'] == widget.complaintId) {
+
+          // Listen for complaint status updates (alternative event name)
+          socketService.on('complaint_status_updated', (data) {
+            print('📡 [FLUTTER] Complaint status updated event received: $data');
+            if (mounted && (data['complaintId'] == widget.complaintId ||
+                           data['ticketId'] == widget.complaintId ||
+                           data['complaint']?['id'] == widget.complaintId)) {
               _loadComplaintDetails();
             }
           });
@@ -164,7 +114,7 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     print('🖱️ [FLUTTER] Loading complaint details: ${widget.complaintId}');
     setState(() => _isLoading = true);
     try {
-      final response = await ApiService.get('${ApiConstants.complaints}/${widget.complaintId}');
+      final response = await ApiService.get(ApiConstants.complaintById(widget.complaintId));
       print('✅ [FLUTTER] Complaint details response received');
       
       if (response['success'] == true) {
@@ -187,68 +137,1813 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     }
   }
 
-  Future<void> _updateStatus(String newStatus, {String? description}) async {
-    if (_isUpdatingStatus) {
-      print('⚠️ [FLUTTER] Status update already in progress');
-      return;
+  Future<void> _loadStaffList() async {
+    try {
+      final response = await ApiService.get(ApiConstants.adminStaff);
+      if (response['success'] == true && mounted) {
+        setState(() {
+          _staffList = List<Map<String, dynamic>>.from(
+            response['data']?['staff'] ?? []
+          );
+        });
+      }
+    } catch (e) {
+      print('❌ [FLUTTER] Error loading staff list: $e');
     }
+  }
+
+  Future<void> _refreshData() async {
+    await Future.wait([
+      _loadComplaintDetails(),
+      _loadStaffList(),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: _buildAppBar(),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _complaint == null
+              ? const Center(child: Text('Complaint not found'))
+              : RefreshIndicator(
+                  onRefresh: _refreshData,
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Section 1: Resident & Flat Context
+                        _buildResidentContextCard(),
+                        const SizedBox(height: 16),
+                        
+                        // Section 2: Complaint Summary
+                        _buildComplaintSummaryCard(),
+                        const SizedBox(height: 16),
+                        
+                        // Section 3: Media Attachments
+                        _buildMediaSection(),
+                        const SizedBox(height: 16),
+                        
+                        // Section 4: Status & Assignment Control
+                        _buildStatusAndAssignmentCard(),
+                        const SizedBox(height: 16),
+                        
+                        // Section 5: Internal Admin Notes
+                        _buildInternalNotesCard(),
+                        const SizedBox(height: 16),
+                        
+                        // Section 6: Resident Communication Timeline
+                        _buildCommunicationTimeline(),
+                        const SizedBox(height: 16),
+                        
+                        // Section 7: Add Comment
+                        _buildCommentInputSection(),
+                        const SizedBox(height: 16),
+                        
+                        // Section 8: Resolution & Closure Flow
+                        if (_complaint?['status'] == 'Resolved' || _complaint?['status'] == 'Closed')
+                          _buildResolutionCard(),
+                        const SizedBox(height: 100), // Space for FAB
+                      ],
+                    ),
+                  ),
+                ),
+      floatingActionButton: _buildFloatingActionButton(),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    final status = _complaint?['status'] ?? 'Unknown';
+    final statusColor = _getStatusColor(status);
     
-    print('🔄 [FLUTTER] Updating status to: $newStatus');
-    setState(() => _isUpdatingStatus = true);
+    return AppBar(
+      backgroundColor: AppColors.primary,
+      elevation: 0,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Colors.white),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Complaint Details',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (_complaint?['ticketNumber'] != null)
+            Text(
+              _complaint!['ticketNumber'],
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh, color: Colors.white),
+          onPressed: _refreshData,
+        ),
+        Container(
+          margin: const EdgeInsets.only(right: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: statusColor.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: statusColor, width: 1.5),
+          ),
+          child: Text(
+            status,
+            style: TextStyle(
+              color: statusColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResidentContextCard() {
+    final createdBy = _complaint?['createdBy'];
+    if (createdBy == null) return const SizedBox.shrink();
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: AppColors.primary.withOpacity(0.1),
+                  backgroundImage: _getProfilePictureUrl(createdBy) != null
+                      ? NetworkImage(_getProfilePictureUrl(createdBy)!)
+                      : null,
+                  onBackgroundImageError: (exception, stackTrace) {
+                    print('❌ [FLUTTER] Failed to load profile picture: $exception');
+                  },
+                  child: _getProfilePictureUrl(createdBy) == null
+                      ? Text(
+                          (createdBy['fullName']?[0] ?? 'R').toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        createdBy['fullName'] ?? 'Unknown',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      if (createdBy['flatNumber'] != null || createdBy['floorNumber'] != null)
+                        Text(
+                          '${createdBy['floorNumber'] ?? ''}${createdBy['flatNumber'] != null ? ' - ${createdBy['flatNumber']}' : ''}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      if (createdBy['wing'] != null)
+                        Text(
+                          'Wing: ${createdBy['wing']}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildQuickActionButton(
+                    icon: Icons.phone,
+                    label: 'Call',
+                    color: AppColors.success,
+                    onTap: () {
+                      final phone = createdBy['phoneNumber']?.toString();
+                      if (phone != null) {
+                        launchUrl(Uri.parse('tel:$phone'));
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildQuickActionButton(
+                    icon: Icons.message,
+                    label: 'Message',
+                    color: AppColors.info,
+                    onTap: () {
+                      final phone = createdBy['phoneNumber']?.toString();
+                      if (phone != null) {
+                        launchUrl(Uri.parse('sms:$phone'));
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
+                const SizedBox(width: 8),
+                Text(
+                  'Raised: ${_formatDateTime(_complaint?['createdAt'])}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const Spacer(),
+                _buildPriorityBadge(_complaint?['priority'] ?? 'Medium'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriorityBadge(String priority) {
+    Color color;
+    switch (priority.toLowerCase()) {
+      case 'emergency':
+        color = AppColors.error;
+        break;
+      case 'high':
+        color = Colors.orange;
+        break;
+      case 'medium':
+        color = AppColors.warning;
+        break;
+      case 'low':
+        color = AppColors.success;
+        break;
+      default:
+        color = AppColors.textSecondary;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        priority,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComplaintSummaryCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Complaint Summary',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _complaint?['title'] ?? 'No Title',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _buildInfoChip('Category', _complaint?['category'] ?? 'N/A'),
+                const SizedBox(width: 8),
+                _buildInfoChip('Sub-category', _complaint?['subCategory'] ?? 'N/A'),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Description',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _complaint?['description'] ?? 'No description',
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textPrimary,
+                height: 1.5,
+              ),
+            ),
+            if (_complaint?['location']?['specificLocation'] != null) ...[
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.location_on, size: 18, color: AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _complaint!['location']['specificLocation'],
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(
+          fontSize: 12,
+          color: AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+
+  String? _getProfilePictureUrl(Map<String, dynamic>? userData) {
+    if (userData == null) return null;
     
     try {
-      final requestBody = <String, dynamic>{
-        'status': newStatus,
-      };
-      
-      if (description != null && description.isNotEmpty) {
-        requestBody['description'] = description;
+      final profilePicture = userData['profilePicture'];
+      if (profilePicture == null) return null;
+
+      // If it's a string, return it directly (after trimming)
+      if (profilePicture is String) {
+        final url = profilePicture.trim();
+        return url.isNotEmpty ? url : null;
       }
-      
-      print('📡 [FLUTTER] Sending PUT request to: ${ApiConstants.complaints}/${widget.complaintId}/status');
-      print('📦 [FLUTTER] Request body: $requestBody');
-      
-      final response = await ApiService.put(
-        '${ApiConstants.complaints}/${widget.complaintId}/status',
-        requestBody,
+
+      // If it's a Map, extract the URL
+      if (profilePicture is Map) {
+        final url = profilePicture['url']?.toString()?.trim();
+        return url != null && url.isNotEmpty ? url : null;
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ [FLUTTER] Error extracting profile picture URL: $e');
+      return null;
+    }
+  }
+
+  Widget _buildMediaSection() {
+    final residentMedia = List<Map<String, dynamic>>.from(_complaint?['media'] ?? []);
+    final adminMedia = List<Map<String, dynamic>>.from(_complaint?['adminMedia'] ?? []);
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Media Attachments',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Resident Attachments
+            if (residentMedia.isNotEmpty) ...[
+              const Text(
+                'Resident Attachments',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 100,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: residentMedia.length,
+                  itemBuilder: (context, index) {
+                    final media = residentMedia[index];
+                    return _buildMediaThumbnail(
+                      media['url'] ?? '',
+                      media['type'] ?? 'image',
+                      isAdmin: false,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+            
+            // Admin Media
+            const Text(
+              'Admin Evidence',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (adminMedia.isNotEmpty)
+              SizedBox(
+                height: 100,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: adminMedia.length,
+                  itemBuilder: (context, index) {
+                    final media = adminMedia[index];
+                    return _buildMediaThumbnail(
+                      media['url'] ?? '',
+                      media['type'] ?? 'image',
+                      isAdmin: true,
+                      purpose: media['purpose'],
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _isUploadingMedia ? null : _showMediaUploadDialog,
+              icon: const Icon(Icons.add_photo_alternate),
+              label: const Text('Add Evidence'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaThumbnail(String url, String type, {bool isAdmin = false, String? purpose}) {
+    return Container(
+      margin: const EdgeInsets.only(right: 12),
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isAdmin ? AppColors.primary : AppColors.border,
+          width: isAdmin ? 2 : 1,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          children: [
+            if (type == 'image')
+              Image.network(
+                url,
+                width: 100,
+                height: 100,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    color: AppColors.background,
+                    child: const Icon(Icons.broken_image, color: AppColors.textLight),
+                  );
+                },
+              )
+            else
+              Container(
+                color: AppColors.background,
+                child: const Icon(Icons.videocam, size: 40, color: AppColors.textLight),
+              ),
+            if (isAdmin && purpose != null)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    purpose,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            Positioned.fill(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _showMediaViewer(url, type),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMediaViewer(String url, String type) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.black,
+        child: Stack(
+          children: [
+            Center(
+              child: type == 'image'
+                  ? Image.network(url)
+                  : const Icon(Icons.videocam, size: 64, color: Colors.white),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMediaUploadDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Add Evidence',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: AppColors.primary),
+              title: const Text('Take Photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: AppColors.primary),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
       );
-      
-      print('📡 [FLUTTER] Response received: ${response.toString()}');
-      
+
+      if (image != null) {
+        await _uploadAdminMedia(File(image.path));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadAdminMedia(File file) async {
+    setState(() => _isUploadingMedia = true);
+    try {
+      final response = await ApiService.uploadFile(
+        ApiConstants.complaintUploadAdminMedia(widget.complaintId),
+        file,
+        fieldName: 'media',
+        additionalFields: {
+          'purpose': 'evidence', // Can be: inspection, resolution, evidence, other
+          'description': '', // Optional description
+        },
+      );
+
       if (response['success'] == true) {
-        print('✅ [FLUTTER] Status updated successfully');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Status updated to $newStatus successfully'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
+            const SnackBar(
+              content: Text('Evidence uploaded successfully'),
+              backgroundColor: AppColors.success,
             ),
           );
-          // Reload complaint details to get updated status
           await _loadComplaintDetails();
         }
       } else {
-        print('❌ [FLUTTER] Status update failed: ${response['message']}');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(response['message'] ?? response['error'] ?? 'Failed to update status'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 3),
+              content: Text(response['message'] ?? 'Upload failed'),
+              backgroundColor: AppColors.error,
             ),
           );
         }
       }
-    } catch (e, stackTrace) {
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploadingMedia = false);
+      }
+    }
+  }
+
+  Widget _buildStatusAndAssignmentCard() {
+    final status = _complaint?['status'] ?? 'Open';
+    final assignedTo = _complaint?['assignedTo'];
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Status & Assignment',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Status Dropdown
+            const Text(
+              'Status',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: status,
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: AppColors.background,
+              ),
+              items: ['Open', 'Assigned', 'In Progress', 'Resolved', 'Closed']
+                  .map((s) => DropdownMenuItem(
+                        value: s,
+                        child: Row(
+                          children: [
+                            Icon(
+                              _getStatusIcon(s),
+                              size: 18,
+                              color: _getStatusColor(s),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(s),
+                          ],
+                        ),
+                      ))
+                  .toList(),
+              onChanged: _isUpdatingStatus
+                  ? null
+                  : (newStatus) {
+                      if (newStatus != null && newStatus != status) {
+                        _updateStatus(newStatus);
+                      }
+                    },
+            ),
+            if (_isUpdatingStatus)
+              const Padding(
+                padding: EdgeInsets.only(top: 8.0),
+                child: LinearProgressIndicator(),
+              ),
+            
+            const SizedBox(height: 20),
+            
+            // Priority Dropdown
+            const Text(
+              'Priority',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _complaint?['priority'] ?? 'Medium',
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: AppColors.background,
+              ),
+              items: ['Low', 'Medium', 'High', 'Emergency']
+                  .map((p) => DropdownMenuItem(
+                        value: p,
+                        child: Text(p),
+                      ))
+                  .toList(),
+              onChanged: (newPriority) {
+                if (newPriority != null) {
+                  _updatePriority(newPriority);
+                }
+              },
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Staff Assignment
+            const Text(
+              'Assign Staff',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (_staffList != null && _staffList!.isNotEmpty)
+              DropdownButtonFormField<String>(
+                value: assignedTo?['staff']?['_id']?.toString() ?? 
+                       assignedTo?['staff']?.toString(),
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  hintText: 'Select staff member',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: null,
+                    child: Text('Unassigned'),
+                  ),
+                  ..._staffList!.map((staff) {
+                    final staffId = staff['_id']?.toString() ?? '';
+                    final userName = staff['user']?['fullName'] ?? 'Unknown';
+                    final specialization = staff['specialization'] ?? '';
+                    return DropdownMenuItem<String>(
+                      value: staffId,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(userName),
+                          if (specialization.isNotEmpty)
+                            Text(
+                              specialization,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textLight,
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+                onChanged: (staffId) {
+                  if (staffId != null) {
+                    _assignStaff(staffId);
+                  } else {
+                    // Unassign
+                    _assignStaff('');
+                  }
+                },
+              )
+            else
+              const Text(
+                'No staff available',
+                style: TextStyle(color: AppColors.textLight),
+              ),
+            
+            // Current Assignment Display
+            if (assignedTo != null && assignedTo['staff'] != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.info.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.person, color: AppColors.info),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            assignedTo['staff']?['user']?['fullName'] ?? 'Unknown',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          if (assignedTo['assignedAt'] != null)
+                            Text(
+                              'Assigned: ${_formatDateTime(assignedTo['assignedAt'])}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInternalNotesCard() {
+    final notes = List<Map<String, dynamic>>.from(_complaint?['internalNotes'] ?? []);
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.lock, size: 20, color: AppColors.textSecondary),
+                const SizedBox(width: 8),
+                const Text(
+                  'Internal Admin Notes',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  'Private',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textLight,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Notes List
+            if (notes.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No internal notes yet',
+                  style: TextStyle(
+                    color: AppColors.textLight,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              )
+            else
+              ...notes.map((note) => _buildNoteItem(note)),
+            
+            const SizedBox(height: 16),
+            
+            // Add Note Field
+            TextField(
+              controller: _internalNoteController,
+              decoration: InputDecoration(
+                hintText: 'Add internal note (not visible to residents)...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: AppColors.background,
+              ),
+              maxLines: 3,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isAddingNote ? null : _addInternalNote,
+                icon: const Icon(Icons.note_add),
+                label: const Text('Add Note'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoteItem(Map<String, dynamic> note) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            note['note'] ?? '',
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.person, size: 14, color: AppColors.textLight),
+              const SizedBox(width: 4),
+              Text(
+                note['addedBy']?['fullName'] ?? 'Admin',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textLight,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Icon(Icons.access_time, size: 14, color: AppColors.textLight),
+              const SizedBox(width: 4),
+              Text(
+                _formatDateTime(note['addedAt']),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textLight,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommunicationTimeline() {
+    final timeline = List<Map<String, dynamic>>.from(_complaint?['timeline'] ?? []);
+    final comments = List<Map<String, dynamic>>.from(_complaint?['comments'] ?? []);
+
+    // Combine timeline and comments for unified timeline
+    final allEvents = <Map<String, dynamic>>[];
+    
+    // Add timeline events
+    for (var event in timeline) {
+      allEvents.add({
+        'type': 'status_change',
+        'data': event,
+        'timestamp': event['timestamp'] ?? event['updatedAt'],
+      });
+    }
+    
+    // Add comments
+    for (var comment in comments) {
+      // Ensure comment data is properly converted to Map<String, dynamic>
+      final commentData = comment is Map
+          ? Map<String, dynamic>.from(comment)
+          : <String, dynamic>{};
+      
+      // Ensure postedBy is properly converted
+      if (commentData['postedBy'] != null && commentData['postedBy'] is Map) {
+        commentData['postedBy'] = Map<String, dynamic>.from(commentData['postedBy']);
+      }
+      
+      allEvents.add({
+        'type': 'comment',
+        'data': commentData,
+        'timestamp': commentData['postedAt'],
+      });
+    }
+    
+    // Sort by timestamp
+    allEvents.sort((a, b) {
+      final aTime = _parseDateTime(a['timestamp']);
+      final bTime = _parseDateTime(b['timestamp']);
+      return bTime.compareTo(aTime); // Newest first
+    });
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Communication Timeline',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            if (allEvents.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No activity yet',
+                  style: TextStyle(
+                    color: AppColors.textLight,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              )
+            else
+              ...allEvents.map((event) => _buildTimelineEvent(event)).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimelineEvent(Map<String, dynamic> event) {
+    final type = event['type'];
+    final data = event['data'] as Map<String, dynamic>;
+    final timestamp = event['timestamp'];
+
+    if (type == 'status_change') {
+      return _buildStatusChangeEvent(data, timestamp);
+    } else if (type == 'comment') {
+      return _buildCommentEvent(data, timestamp);
+    }
+    
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildStatusChangeEvent(Map<String, dynamic> data, dynamic timestamp) {
+    final status = data['status'] ?? '';
+    final description = data['description'] ?? '';
+    final updatedBy = data['updatedBy'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _getStatusColor(status).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _getStatusColor(status).withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: _getStatusColor(status),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.update, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Status Changed: $status',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.person, size: 14, color: AppColors.textLight),
+                    const SizedBox(width: 4),
+                    Text(
+                      updatedBy?['fullName'] ?? 'Admin',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textLight,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Icon(Icons.access_time, size: 14, color: AppColors.textLight),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatDateTime(timestamp),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentEvent(Map<String, dynamic> data, dynamic timestamp) {
+    final text = data['text'] ?? '';
+    final postedByRaw = data['postedBy'];
+    final postedBy = postedByRaw is Map
+        ? Map<String, dynamic>.from(postedByRaw)
+        : null;
+    final media = List<Map<String, dynamic>>.from(data['media'] ?? []);
+
+    // Extract profile picture URL once
+    final profilePicUrl = postedBy != null ? _getProfilePictureUrl(postedBy) : null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: AppColors.primary.withOpacity(0.1),
+            backgroundImage: profilePicUrl != null
+                ? NetworkImage(profilePicUrl)
+                : null,
+            onBackgroundImageError: (exception, stackTrace) {
+              print('❌ [FLUTTER] Failed to load profile picture: $exception');
+            },
+            child: profilePicUrl == null
+                ? Text(
+                    (postedBy?['fullName']?[0] ?? 'U').toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  postedBy?['fullName'] ?? 'Unknown',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (media.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 60,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: media.length,
+                      itemBuilder: (context, index) {
+                        return _buildMediaThumbnail(
+                          media[index]['url'] ?? '',
+                          media[index]['type'] ?? 'image',
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  _formatDateTime(timestamp),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentInputSection() {
+    final status = _complaint?['status'] ?? 'Open';
+    if (status == 'Closed' || status == 'Cancelled') {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.comment, color: AppColors.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  'Add Comment',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _commentController,
+              decoration: InputDecoration(
+                hintText: 'Type your comment...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                filled: true,
+                fillColor: AppColors.background,
+              ),
+              maxLines: 4,
+            ),
+            if (_selectedCommentMedia.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 80,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _selectedCommentMedia.length,
+                  itemBuilder: (context, index) {
+                    return Stack(
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              _selectedCommentMedia[index],
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedCommentMedia.removeAt(index);
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.close,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.photo_library, color: AppColors.primary),
+                  onPressed: _pickCommentMedia,
+                  tooltip: 'Add Photo',
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: _isPostingComment ? null : _postComment,
+                  icon: _isPostingComment
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send),
+                  label: const Text('Post Comment'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickCommentMedia() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+
+      if (image != null) {
+        setState(() {
+          _selectedCommentMedia.add(File(image.path));
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking image: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _postComment() async {
+    final text = _commentController.text.trim();
+    if (text.isEmpty && _selectedCommentMedia.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a comment or add media')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isPostingComment = true);
+
+    try {
+      List<ComplaintMedia>? mediaList;
+      
+      // Upload media files if any
+      if (_selectedCommentMedia.isNotEmpty) {
+        mediaList = [];
+        for (var file in _selectedCommentMedia) {
+          try {
+            // TODO: Replace with generic upload endpoint
+            // Upload to generic media endpoint
+            final uploadResponse = await ApiService.uploadFile(
+              '/upload/media',
+              file,
+              fieldName: 'image',
+            );
+            if (uploadResponse['success'] == true) {
+              // Extract media data from response
+              final mediaData = uploadResponse['data']?['media'] ?? uploadResponse['data'];
+              mediaList.add(ComplaintMedia(
+                url: mediaData['url'] ?? uploadResponse['data']?['url'] ?? '',
+                publicId: mediaData['publicId']?.toString() ?? uploadResponse['data']?['publicId']?.toString(),
+                type: 'image',
+              ));
+            }
+          } catch (e) {
+            print('❌ [FLUTTER] Error uploading media: $e');
+          }
+        }
+      }
+
+      // Post comment with media
+      final response = await ApiService.post(
+        '${ApiConstants.complaints}/${widget.complaintId}/comments',
+        {
+          'text': text.isEmpty ? ' ' : text, // Backend requires text, use space if empty
+          if (mediaList != null && mediaList.isNotEmpty)
+            'media': mediaList.map((m) => m.toJson()).toList(),
+        },
+      );
+
+      if (response['success'] == true) {
+        _commentController.clear();
+        setState(() {
+          _selectedCommentMedia.clear();
+        });
+        _loadComplaintDetails();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Comment posted successfully'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(response['message'] ?? 'Failed to post comment'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ [FLUTTER] Error posting comment: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error posting comment: ${e.toString()}')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPostingComment = false);
+      }
+    }
+  }
+
+  Widget _buildResolutionCard() {
+    final resolution = _complaint?['resolution'];
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: AppColors.success),
+                const SizedBox(width: 8),
+                const Text(
+                  'Resolution',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (resolution?['description'] != null)
+              Text(
+                resolution['description'],
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            if (resolution?['resolvedAt'] != null) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Resolved: ${_formatDateTime(resolution['resolvedAt'])}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget? _buildFloatingActionButton() {
+    final status = _complaint?['status'] ?? 'Open';
+    if (status == 'Closed' || status == 'Cancelled') return null;
+
+    return FloatingActionButton.extended(
+      onPressed: () => _showQuickActions(),
+      backgroundColor: AppColors.primary,
+      icon: const Icon(Icons.add, color: Colors.white),
+      label: const Text(
+        'Quick Actions',
+        style: TextStyle(color: Colors.white),
+      ),
+    );
+  }
+
+  void _showQuickActions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.note_add, color: AppColors.primary),
+              title: const Text('Add Internal Note'),
+              onTap: () {
+                Navigator.pop(context);
+                // Focus on note field
+                _scrollController.animateTo(
+                  _scrollController.position.maxScrollExtent,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_photo_alternate, color: AppColors.primary),
+              title: const Text('Add Evidence'),
+              onTap: () {
+                Navigator.pop(context);
+                _showMediaUploadDialog();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_add, color: AppColors.primary),
+              title: const Text('Assign Staff'),
+              onTap: () {
+                Navigator.pop(context);
+                // Scroll to assignment section
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _updateStatus(String newStatus) async {
+    final oldStatus = _complaint?['status'] ?? 'Unknown';
+    
+    // Show confirmation dialog for critical status changes
+    if (newStatus == 'Closed' || newStatus == 'Resolved') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Change Status to $newStatus?'),
+          content: Text(
+            newStatus == 'Closed'
+                ? 'Are you sure you want to close this complaint? Once closed, it cannot be reopened automatically.'
+                : 'Are you sure the issue has been resolved? The resident will be notified.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+    }
+
+    setState(() => _isUpdatingStatus = true);
+    try {
+      // Prepare request body with status
+      final requestBody = {
+        'status': newStatus,
+        'description': 'Status changed from $oldStatus to $newStatus',
+      };
+
+      print('🔄 [FLUTTER] Updating status from $oldStatus to $newStatus');
+      final response = await ApiService.put(
+        ApiConstants.complaintStatus(widget.complaintId),
+        requestBody,
+      );
+
+      if (response['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Status updated to $newStatus'),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          // Reload complaint details to get latest state
+          await _loadComplaintDetails();
+          print('✅ [FLUTTER] Status updated successfully to $newStatus');
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(response['message'] ?? 'Failed to update status'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        print('❌ [FLUTTER] Status update failed: ${response['message']}');
+      }
+    } catch (e) {
       print('❌ [FLUTTER] Error updating status: $e');
-      print('❌ [FLUTTER] Stack trace: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error updating status: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
+            backgroundColor: AppColors.error,
           ),
         );
       }
@@ -259,719 +1954,159 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     }
   }
 
-  void _showStatusChangeDialog(String currentStatus) {
-    // Get allowed next statuses based on current status
-    List<String> allowedStatuses = _getAllowedStatuses(currentStatus);
-    
-    if (allowedStatuses.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No status transitions available')),
+  Future<void> _updatePriority(String priority) async {
+    try {
+      final response = await ApiService.put(
+        ApiConstants.complaintPriority(widget.complaintId),
+        {'priority': priority},
       );
-      return;
-    }
 
-    final descriptionController = TextEditingController();
-    final selectedStatusNotifier = ValueNotifier<String?>(null);
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return ValueListenableBuilder<String?>(
-          valueListenable: selectedStatusNotifier,
-          builder: (context, selectedStatus, _) {
-            return AlertDialog(
-              title: const Text('Change Status'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Current Status:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      currentStatus,
-                      style: TextStyle(
-                        color: _getStatusColor(currentStatus),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'New Status:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      value: selectedStatus,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: 'Select new status',
-                      ),
-                      items: allowedStatuses.map((status) {
-                        return DropdownMenuItem(
-                          value: status,
-                          child: Text(status),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        selectedStatusNotifier.value = value;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Description (Optional):',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: descriptionController,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: 'Add a note about this status change...',
-                      ),
-                      maxLines: 3,
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    selectedStatusNotifier.dispose();
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: selectedStatus == null
-                      ? null
-                      : () {
-                          final statusToUpdate = selectedStatus;
-                          final descriptionText = descriptionController.text.trim().isEmpty
-                              ? null
-                              : descriptionController.text.trim();
-                          selectedStatusNotifier.dispose();
-                          Navigator.pop(context);
-                          _updateStatus(
-                            statusToUpdate,
-                            description: descriptionText,
-                          );
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                  ),
-                  child: const Text('Update Status'),
-                ),
-              ],
-            );
-          },
+      if (response['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Priority updated to $priority'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          await _loadComplaintDetails();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
         );
-      },
-    );
-  }
-
-  List<String> _getAllowedStatuses(String currentStatus) {
-    switch (currentStatus.toLowerCase()) {
-      case 'open':
-        return ['Assigned', 'Cancelled'];
-      case 'assigned':
-        return ['In Progress', 'Cancelled', 'Open'];
-      case 'in progress':
-        return ['Resolved', 'Cancelled'];
-      case 'resolved':
-        return ['Closed', 'Reopened'];
-      case 'closed':
-        return ['Reopened'];
-      case 'reopened':
-        return ['Assigned', 'In Progress', 'Cancelled'];
-      case 'cancelled':
-        return []; // Terminal state
-      default:
-        return [];
+      }
     }
   }
 
-  Color _getStatusColor(String? status) {
-    switch (status?.toLowerCase()) {
-      case 'open':
-        return Colors.red;
-      case 'assigned':
-        return Colors.orange;
-      case 'in progress':
-        return Colors.blue;
-      case 'resolved':
-        return Colors.green;
-      case 'closed':
-        return Colors.grey;
-      case 'reopened':
-        return Colors.purple;
-      case 'cancelled':
-        return Colors.black;
-      default:
-        return Colors.grey;
+  Future<void> _assignStaff(String staffId) async {
+    try {
+      final response = await ApiService.post(
+        ApiConstants.complaintAssign(widget.complaintId),
+        staffId.isEmpty ? {} : {'staffId': staffId},
+      );
+
+      if (response['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(staffId.isEmpty ? 'Staff unassigned' : 'Staff assigned'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          await _loadComplaintDetails();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Ticket: ${_complaint?['ticketNumber'] ?? 'N/A'}'),
-        backgroundColor: AppColors.primary,
-        actions: [
-          if (_complaint != null && _complaint!['status'] != 'Cancelled' && _complaint!['status'] != 'Closed')
-            IconButton(
-              icon: const Icon(Icons.edit),
-              tooltip: 'Change Status',
-              onPressed: _isUpdatingStatus
-                  ? null
-                  : () => _showStatusChangeDialog(_complaint!['status'] ?? 'Open'),
+  Future<void> _addInternalNote() async {
+    final note = _internalNoteController.text.trim();
+    if (note.isEmpty) return;
+
+    setState(() => _isAddingNote = true);
+    try {
+      final response = await ApiService.post(
+        ApiConstants.complaintInternalNotes(widget.complaintId),
+        {'note': note},
+      );
+
+      if (response['success'] == true) {
+        _internalNoteController.clear();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Internal note added'),
+              backgroundColor: AppColors.success,
             ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _complaint == null
-              ? const Center(child: Text('Complaint not found'))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Status Card with Change Button
-                      _buildStatusCard(),
-                      const SizedBox(height: 16),
-                      // Complaint Details
-                      _buildDetailsCard(),
-                      const SizedBox(height: 16),
-                      // Assigned Staff Section
-                      if (_complaint?['assignedTo'] != null && 
-                          _complaint!['assignedTo']['staff'] != null)
-                        _buildAssignedStaffCard(),
-                      const SizedBox(height: 16),
-                      // Progress Reports (Work Updates)
-                      if (_complaint?['workUpdates'] != null && 
-                          (_complaint!['workUpdates'] as List).isNotEmpty)
-                        _buildProgressReports(),
-                      const SizedBox(height: 16),
-                      // Timeline
-                      if (_complaint?['timeline'] != null &&
-                          (_complaint!['timeline'] as List).isNotEmpty)
-                        _buildTimeline(),
-                    ],
-                  ),
-                ),
-    );
+          );
+          await _loadComplaintDetails();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isAddingNote = false);
+      }
+    }
   }
 
-  Widget _buildStatusCard() {
-    final status = _complaint?['status'] ?? 'Unknown';
-    final statusColor = _getStatusColor(status);
-    
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: statusColor.withOpacity(0.3)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.description, color: statusColor, size: 24),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _complaint?['title'] ?? 'No Title',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Category: ${_complaint?['category'] ?? 'N/A'}',
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: statusColor),
-                ),
-                child: Text(
-                  status,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (status != 'Cancelled' && status != 'Closed')
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isUpdatingStatus
-                      ? null
-                      : () => _showStatusChangeDialog(status),
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Change Status'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'open':
+        return AppColors.statusOpen;
+      case 'assigned':
+        return AppColors.statusAssigned;
+      case 'in progress':
+        return AppColors.statusInProgress;
+      case 'resolved':
+        return AppColors.statusResolved;
+      case 'closed':
+        return AppColors.textSecondary;
+      case 'cancelled':
+        return AppColors.error;
+      default:
+        return AppColors.textSecondary;
+    }
   }
 
-  Widget _buildDetailsCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Complaint Details',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _DetailRow(
-            label: 'Ticket Number',
-            value: _complaint?['ticketNumber'] ?? 'N/A',
-          ),
-          _DetailRow(
-            label: 'Priority',
-            value: _complaint?['priority'] ?? 'N/A',
-          ),
-          _DetailRow(
-            label: 'Description',
-            value: _complaint?['description'] ?? 'No description',
-            isMultiline: true,
-          ),
-          if (_complaint?['location'] != null) ...[
-            const Divider(),
-            const Text(
-              'Location',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            if (_complaint!['location']['flatNumber'] != null)
-              _DetailRow(
-                label: 'Flat',
-                value: 'Floor ${_complaint!['location']['floorNumber']} - ${_complaint!['location']['flatNumber']}',
-              ),
-            if (_complaint!['location']['specificLocation'] != null)
-              _DetailRow(
-                label: 'Specific Location',
-                value: _complaint!['location']['specificLocation'],
-              ),
-          ],
-          if (_complaint?['createdBy'] != null) ...[
-            const Divider(),
-            const Text(
-              'Created By',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            _DetailRow(
-              label: 'Name',
-              value: _complaint!['createdBy']['fullName'] ?? 'N/A',
-            ),
-            if (_complaint!['createdBy']['flatNumber'] != null)
-              _DetailRow(
-                label: 'Flat',
-                value: 'Floor ${_complaint!['createdBy']['floorNumber']} - ${_complaint!['createdBy']['flatNumber']}',
-              ),
-            if (_complaint!['createdBy']['phoneNumber'] != null)
-              _DetailRow(
-                label: 'Phone',
-                value: _complaint!['createdBy']['phoneNumber'],
-              ),
-          ],
-        ],
-      ),
-    );
+  IconData _getStatusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'open':
+        return Icons.radio_button_unchecked;
+      case 'assigned':
+        return Icons.person_add;
+      case 'in progress':
+        return Icons.hourglass_empty;
+      case 'resolved':
+        return Icons.check_circle;
+      case 'closed':
+        return Icons.lock;
+      case 'cancelled':
+        return Icons.cancel;
+      default:
+        return Icons.help_outline;
+    }
   }
 
-  Widget _buildAssignedStaffCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.blue.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.person, color: Colors.blue),
-              const SizedBox(width: 8),
-              const Text(
-                'Assigned Staff',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _DetailRow(
-            label: 'Name',
-            value: _complaint!['assignedTo']['staff']['user']?['fullName'] ?? 'N/A',
-          ),
-          if (_complaint!['assignedTo']['assignedAt'] != null)
-            _DetailRow(
-              label: 'Assigned On',
-              value: DateFormat('MMM d, yyyy • h:mm a').format(
-                DateTime.parse(_complaint!['assignedTo']['assignedAt']),
-              ),
-            ),
-        ],
-      ),
-    );
+  String _formatDateTime(dynamic dateTime) {
+    if (dateTime == null) return 'Recently';
+    try {
+      final dt = dateTime is String ? DateTime.parse(dateTime) : dateTime as DateTime;
+      return DateFormat('MMM d, yyyy • h:mm a').format(dt);
+    } catch (e) {
+      return 'Recently';
+    }
   }
 
-  Widget _buildProgressReports() {
-    final workUpdates = _complaint!['workUpdates'] as List;
-    
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.timeline, color: AppColors.primary),
-              const SizedBox(width: 8),
-              const Text(
-                'Progress Reports',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...workUpdates.map((update) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundColor: Colors.blue,
-                        child: Text(
-                          update['updatedBy']?['fullName']?[0].toUpperCase() ?? 'S',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              update['updatedBy']?['fullName'] ?? 'Staff',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              update['updatedAt'] != null
-                                  ? DateFormat('MMM d, yyyy • h:mm a')
-                                      .format(DateTime.parse(update['updatedAt']))
-                                  : 'Recently',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    update['description'] ?? 'No description',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTimeline() {
-    final timeline = _complaint!['timeline'] as List;
-    
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.timeline, color: AppColors.primary),
-              const SizedBox(width: 8),
-              const Text(
-                'Status Change History',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (timeline.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'No status changes yet',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 14,
-                ),
-              ),
-            )
-          else
-            ...timeline.asMap().entries.map((entry) {
-              final index = entry.key;
-              final event = entry.value;
-              final isLast = index == timeline.length - 1;
-              
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Column(
-                      children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(event['status'] ?? 'Open'),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                        ),
-                        if (!isLast)
-                          Container(
-                            width: 2,
-                            height: 40,
-                            color: Colors.grey.shade300,
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  event['action'] ?? event['status'] ?? 'Status changed',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _getStatusColor(event['status'] ?? 'Open')
-                                      .withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: _getStatusColor(event['status'] ?? 'Open'),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Text(
-                                  event['status'] ?? '',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: _getStatusColor(event['status'] ?? 'Open'),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (event['description'] != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              event['description'],
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey.shade700,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.person,
-                                size: 14,
-                                color: Colors.grey.shade600,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                event['updatedBy']?['fullName'] ?? 
-                                event['updatedByName'] ?? 
-                                'Admin',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Icon(
-                                Icons.access_time,
-                                size: 14,
-                                color: Colors.grey.shade600,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                event['timestamp'] != null || event['updatedAt'] != null
-                                    ? DateFormat('MMM d, yyyy • h:mm a').format(
-                                        DateTime.parse(
-                                          event['timestamp'] ?? 
-                                          event['updatedAt'] ?? 
-                                          DateTime.now().toIso8601String()
-                                        )
-                                      )
-                                    : 'Recently',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-        ],
-      ),
-    );
+  DateTime _parseDateTime(dynamic dateTime) {
+    if (dateTime == null) return DateTime.now();
+    try {
+      return dateTime is String ? DateTime.parse(dateTime) : dateTime as DateTime;
+    } catch (e) {
+      return DateTime.now();
+    }
   }
 }
-
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool isMultiline;
-
-  const _DetailRow({
-    required this.label,
-    required this.value,
-    this.isMultiline = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 14,
-            ),
-            maxLines: isMultiline ? null : 2,
-            overflow: isMultiline ? null : TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-}
-

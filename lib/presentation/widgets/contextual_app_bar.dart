@@ -6,7 +6,6 @@ enum AppBarType {
   users,
   complaints,
   news,
-  chat,
   profile,
   home,
 }
@@ -216,18 +215,6 @@ class ContextualAppBar extends StatelessWidget implements PreferredSizeWidget {
               icon: const Icon(Icons.search),
               onPressed: onSearch,
               tooltip: 'Search',
-            ),
-          );
-        }
-        break;
-
-      case AppBarType.chat:
-        if (onAdd != null) {
-          actions.add(
-            IconButton(
-              icon: const Icon(Icons.add_comment),
-              onPressed: onAdd,
-              tooltip: 'New Chat',
             ),
           );
         }

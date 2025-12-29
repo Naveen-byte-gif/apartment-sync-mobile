@@ -6,28 +6,17 @@ import 'create_apartment_flow_screen.dart';
 import 'create_user_screen.dart';
 import 'create_staff_screen.dart';
 import 'building_details_screen.dart';
-import 'apartment_build_view_screen.dart';
+import 'building_view_3d_screen.dart';
+import 'bulk_resident_management_screen.dart';
 import 'users_management_screen.dart';
 import 'complaints_management_screen.dart' show ComplaintsManagementScreen, ComplaintsManagementScreenState;
 import 'settings_screen.dart';
-import '../chat/premium_chat_list_screen.dart';
 import '../home/tabs/news_tab_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/premium_bottom_nav.dart';
 import '../../widgets/contextual_app_bar.dart';
+import '../../widgets/app_sidebar.dart';
 import 'dart:convert';
-
-class _DrawerItem {
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-
-  _DrawerItem({
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
-}
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -210,10 +199,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       case 2: // News
         body = const NewsTabScreen();
         break;
-      case 3: // Chat
-        body = const PremiumChatListScreen();
-        break;
-      case 4: // Profile
+      case 3: // Profile
         body = const ProfileScreen();
         break;
       default:
@@ -371,16 +357,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           },
         );
 
-      case 3: // Chat
-        return ContextualAppBar(
-          type: AppBarType.chat,
-          title: 'Chat',
-          onAdd: () {
-            // New chat action
-          },
-        );
-
-      case 4: // Profile
+      case 3: // Profile
         return ContextualAppBar(
           type: AppBarType.profile,
           title: 'Profile',
@@ -397,205 +374,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  Widget _buildDrawer() {
-    return Drawer(
-      child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            // Drawer Header
-            DrawerHeader(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.primary,
-                    AppColors.primaryDark,
-                  ],
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: const Icon(
-                      Icons.admin_panel_settings,
-                      color: AppColors.primary,
-                      size: 30,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Admin Panel',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_selectedBuildingCode != null && _allBuildings.isNotEmpty)
-                    Text(
-                      _allBuildings.firstWhere(
-                        (b) => b['code'] == _selectedBuildingCode,
-                        orElse: () => {'name': ''},
-                      )['name'] ?? '',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            
-            // Primary Actions Section
-            _buildDrawerSection(
-              title: 'Management',
-              items: [
-                _DrawerItem(
-                  icon: Icons.description,
-                  title: 'Complaints',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ComplaintsManagementScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _DrawerItem(
-                  icon: Icons.bar_chart,
-                  title: 'Reports',
-                  onTap: () {
-                    Navigator.pop(context);
-                    // TODO: Navigate to reports
-                    AppMessageHandler.showInfo(context, 'Reports coming soon');
-                  },
-                ),
-              ],
-            ),
-            
-            const Divider(),
-            
-            // Settings Section
-            _buildDrawerSection(
-              title: 'Settings',
-              items: [
-                _DrawerItem(
-                  icon: Icons.settings,
-                  title: 'Settings',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const SettingsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _DrawerItem(
-                  icon: Icons.security,
-                  title: 'Permissions',
-                  onTap: () {
-                    Navigator.pop(context);
-                    // TODO: Navigate to permissions
-                    AppMessageHandler.showInfo(context, 'Permissions coming soon');
-                  },
-                ),
-              ],
-            ),
-            
-            const Divider(),
-            
-            // Support Section
-            _buildDrawerSection(
-              title: 'Support',
-              items: [
-                _DrawerItem(
-                  icon: Icons.help_outline,
-                  title: 'Help & Support',
-                  onTap: () {
-                    Navigator.pop(context);
-                    // TODO: Navigate to help
-                    AppMessageHandler.showInfo(context, 'Help & Support coming soon');
-                  },
-                ),
-              ],
-            ),
-            
-            const Divider(),
-            
-            // Logout
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text(
-                'Logout',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                await StorageService.remove(AppConstants.tokenKey);
-                await StorageService.remove(AppConstants.userKey);
-                ApiService.setToken(null);
-                if (mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-                    (route) => false,
-                  );
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDrawerSection({
-    required String title,
-    required List<_DrawerItem> items,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Text(
-            title.toUpperCase(),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textSecondary,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-        ...items.map((item) => ListTile(
-              leading: Icon(item.icon, color: AppColors.primary),
-              title: Text(item.title),
-              onTap: item.onTap,
-            )),
-      ],
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
+    // Get building name for sidebar
+    final buildingName = _selectedBuildingCode != null && _allBuildings.isNotEmpty
+        ? _allBuildings.firstWhere(
+            (b) => b['code'] == _selectedBuildingCode,
+            orElse: () => {'name': ''},
+          )['name'] ?? ''
+        : null;
+
     return Scaffold(
       appBar: _buildAppBar(),
-      drawer: _buildDrawer(),
+      drawer: AppSidebarBuilder.buildAdminSidebar(
+        context: context,
+        buildingName: buildingName,
+        buildings: _allBuildings,
+        selectedBuildingCode: _selectedBuildingCode,
+        onBuildingSelected: (code) {
+          _saveSelectedBuilding(code);
+          _loadDashboardData();
+        },
+      ),
       body: SafeArea(
         child: _getBodyForIndex(_currentIndex),
       ),
@@ -611,7 +412,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           NavItem(icon: Icons.dashboard, label: 'Dashboard'),
           NavItem(icon: Icons.people, label: 'Users'),
           NavItem(icon: Icons.article_outlined, label: 'News'),
-          NavItem(icon: Icons.chat_bubble_outline, label: 'Chat'),
           NavItem(icon: Icons.person, label: 'Profile'),
         ],
       ),
@@ -921,15 +721,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 },
               ),
               _ActionCard(
-                title: 'Apartment Build View',
-                icon: Icons.grid_view,
-                color: AppColors.warning,
+                title: 'Resident Management',
+                icon: Icons.people,
+                color: AppColors.primary,
                 onTap: () {
-                  print('🖱️ [FLUTTER] Apartment Build View button clicked');
+                  print('🖱️ [FLUTTER] Resident Management button clicked');
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => ApartmentBuildViewScreen(
+                      builder: (_) => const BulkResidentManagementScreen(),
+                    ),
+                  );
+                },
+              ),
+              _ActionCard(
+                title: '3D Building View',
+                icon: Icons.view_in_ar,
+                color: AppColors.info,
+                onTap: () {
+                  print('🖱️ [FLUTTER] 3D Building View button clicked');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => BuildingView3DScreen(
                         buildingCode: _selectedBuildingCode,
                       ),
                     ),

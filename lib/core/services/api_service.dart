@@ -103,6 +103,7 @@ class ApiService {
     String endpoint,
     File file, {
     String fieldName = 'image',
+    Map<String, String>? additionalFields,
   }) async {
     final url = Uri.parse('${ApiConstants.baseUrl}$endpoint');
     print('📡 [API] UPLOAD Request: $url');
@@ -115,6 +116,11 @@ class ApiService {
       if (_token != null) 'Authorization': 'Bearer $_token',
     };
     request.headers.addAll(headers);
+
+    // Add additional fields if provided
+    if (additionalFields != null) {
+      request.fields.addAll(additionalFields);
+    }
 
     // Add file
     final fileStream = http.ByteStream(file.openRead());

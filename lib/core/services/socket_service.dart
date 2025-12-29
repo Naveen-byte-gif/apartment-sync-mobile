@@ -110,35 +110,6 @@ class SocketService {
     _socket?.on('user_created', (data) {
       print('📡 [FLUTTER] User created event: $data');
     });
-
-    // Chat events - these will be handled by ChatProvider
-    _socket?.on('chat_message', (data) {
-      print('📡 [FLUTTER] Chat message event: $data');
-    });
-
-    _socket?.on('typing_start', (data) {
-      print('📡 [FLUTTER] Typing start event: $data');
-    });
-
-    _socket?.on('typing_stop', (data) {
-      print('📡 [FLUTTER] Typing stop event: $data');
-    });
-
-    _socket?.on('user_online', (data) {
-      print('📡 [FLUTTER] User online event: $data');
-    });
-
-    _socket?.on('user_offline', (data) {
-      print('📡 [FLUTTER] User offline event: $data');
-    });
-
-    _socket?.on('chat_read', (data) {
-      print('📡 [FLUTTER] Chat read event: $data');
-    });
-
-    _socket?.on('message_delivered', (data) {
-      print('📡 [FLUTTER] Message delivered event: $data');
-    });
   }
 
   void disconnect() {

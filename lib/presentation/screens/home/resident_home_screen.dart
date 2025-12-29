@@ -1,6 +1,7 @@
 import '../../../core/imports/app_imports.dart';
 import '../../../data/models/user_data.dart';
 import '../../screens/complaints/resident_complaints_screen.dart';
+import '../../screens/complaints/complaint_detail_screen.dart';
 import '../../screens/notices/notices_screen.dart';
 import '../../screens/auth/role_selection_screen.dart';
 import 'dart:convert';
@@ -12,20 +13,39 @@ class ResidentHomeScreen extends StatefulWidget {
   State<ResidentHomeScreen> createState() => _ResidentHomeScreenState();
 }
 
-class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
+class _ResidentHomeScreenState extends State<ResidentHomeScreen>
+    with SingleTickerProviderStateMixin {
   UserData? _user;
   Map<String, dynamic>? _buildingData;
   Map<String, dynamic>? _flatData;
   Map<String, dynamic>? _dashboardData;
   List<Map<String, dynamic>> _activeComplaints = [];
+  List<Map<String, dynamic>> _recentCompletions = [];
+  List<Map<String, dynamic>> _recentNotices = [];
   int _unreadNotifications = 0;
   bool _isLoading = true;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
+    );
+    _animationController.forward();
     _loadData();
     _setupSocketListeners();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   void _setupSocketListeners() {
@@ -112,16 +132,35 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
           _activeComplaints = List<Map<String, dynamic>>.from(
             dashboardResponse['data']?['activeComplaints'] ?? [],
           );
+          // Load recent completions from dashboard
+          final recentActivity =
+              dashboardResponse['data']?['dashboard']?['recentActivity'];
+          if (recentActivity != null) {
+            _recentCompletions = List<Map<String, dynamic>>.from(
+              recentActivity,
+            );
+          }
         });
         print('✅ [FLUTTER] Dashboard data loaded');
-      } else if (dashboardResponse['message']?.toString().toLowerCase().contains('not authorized') == true ||
-                 dashboardResponse['message']?.toString().toLowerCase().contains('unauthorized') == true) {
+      } else if (dashboardResponse['message']
+                  ?.toString()
+                  .toLowerCase()
+                  .contains('not authorized') ==
+              true ||
+          dashboardResponse['message']?.toString().toLowerCase().contains(
+                'unauthorized',
+              ) ==
+              true) {
         print('⚠️ [FLUTTER] Authentication failed, redirecting to login');
         if (mounted) {
           await StorageService.remove(AppConstants.tokenKey);
           await StorageService.remove(AppConstants.userKey);
           ApiService.setToken(null);
-          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/login',
+            (route) => false,
+          );
         }
         return;
       }
@@ -139,33 +178,38 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
         print('✅ [FLUTTER] Building details loaded');
       }
 
-      // Load unread notifications count
-      print('🔔 [FLUTTER] Loading notifications count...');
+      // Load notices
+      print('🔔 [FLUTTER] Loading notices...');
       final noticesResponse = await ApiService.get(ApiConstants.announcements);
       if (noticesResponse['success'] == true) {
         final notices = noticesResponse['data']?['notices'] ?? [];
         setState(() {
+          _recentNotices = List<Map<String, dynamic>>.from(notices.take(3));
           _unreadNotifications = notices
               .where((n) => n['isRead'] == false)
               .length;
         });
-        print('✅ [FLUTTER] Notifications count: $_unreadNotifications');
+        print('✅ [FLUTTER] Notices loaded: ${_recentNotices.length}');
       }
     } catch (e) {
       print('❌ [FLUTTER] Error loading data: $e');
       // Check if it's an authentication error
-      if (e.toString().toLowerCase().contains('unauthorized') || 
+      if (e.toString().toLowerCase().contains('unauthorized') ||
           e.toString().toLowerCase().contains('401')) {
         print('⚠️ [FLUTTER] Authentication error, redirecting to login');
         if (mounted) {
           await StorageService.remove(AppConstants.tokenKey);
           await StorageService.remove(AppConstants.userKey);
           ApiService.setToken(null);
-          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/login',
+            (route) => false,
+          );
         }
         return;
       }
-      
+
       if (mounted && _user == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -215,20 +259,31 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                               topRight: Radius.circular(30),
                             ),
                           ),
-                          child: Column(
-                            children: [
-                              const SizedBox(height: 20),
-                              // Summary Cards
-                              _buildSummaryCards(),
-                              const SizedBox(height: 20),
-                              // Active Complaints
-                              if (_activeComplaints.isNotEmpty)
-                                _buildActiveComplaints(),
-                              const SizedBox(height: 20),
-                              // Quick Actions
-                              _buildQuickActions(),
-                              const SizedBox(height: 20),
-                            ],
+                          child: FadeTransition(
+                            opacity: _fadeAnimation,
+                            child: Column(
+                              children: [
+                                const SizedBox(height: 20),
+                                // Summary Cards with 3D effect
+                                _buildSummaryCards(),
+                                const SizedBox(height: 20),
+                                // Recent Notices
+                                if (_recentNotices.isNotEmpty)
+                                  _buildRecentNotices(),
+                                const SizedBox(height: 20),
+                                // Active Complaints
+                                if (_activeComplaints.isNotEmpty)
+                                  _buildActiveComplaints(),
+                                const SizedBox(height: 20),
+                                // Recent Completions
+                                if (_recentCompletions.isNotEmpty)
+                                  _buildRecentCompletions(),
+                                const SizedBox(height: 20),
+                                // Quick Actions
+                                _buildQuickActions(),
+                                const SizedBox(height: 20),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -240,46 +295,100 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
     );
   }
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      return 'Good Morning';
+    } else if (hour < 17) {
+      return 'Good Afternoon';
+    } else {
+      return 'Good Evening';
+    }
+  }
+
+  IconData _getGreetingIcon() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      return Icons.wb_sunny;
+    } else if (hour < 17) {
+      return Icons.wb_twilight;
+    } else {
+      return Icons.nightlight_round;
+    }
+  }
+
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
         children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(25),
-            ),
-            child: Center(
-              child: Text(
-                _user?.fullName[0].toUpperCase() ?? 'R',
-                style: TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+          // 3D Avatar with shadow effect
+          Transform(
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.001)
+              ..rotateX(0.05)
+              ..rotateY(-0.05),
+            alignment: FractionalOffset.center,
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Colors.white, Colors.white.withOpacity(0.9)],
+                ),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 15,
+                    offset: const Offset(0, 5),
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  _user?.fullName[0].toUpperCase() ?? 'R',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Welcome back',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textOnPrimary.withOpacity(0.9),
-                  ),
+                Row(
+                  children: [
+                    Icon(
+                      _getGreetingIcon(),
+                      size: 18,
+                      color: AppColors.textOnPrimary.withOpacity(0.9),
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      _getGreeting(),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textOnPrimary.withOpacity(0.9),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 6),
                 Text(
                   _user?.fullName ?? 'Resident',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     color: AppColors.textOnPrimary,
                     fontWeight: FontWeight.bold,
+                    fontSize: 24,
                   ),
                 ),
                 if (_buildingData != null) ...[
@@ -379,78 +488,103 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
         children: [
-          // Comprehensive Flat Details Card
-          Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          // 3D Flat Details Card
+          _build3DCard(
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(20.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [AppColors.primary, AppColors.primaryDark],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
-                        child: const Icon(Icons.home, color: AppColors.primary, size: 28),
+                        child: const Icon(
+                          Icons.home,
+                          color: Colors.white,
+                          size: 28,
+                        ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'My Flat Details',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textPrimary,
+                                  ),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _flatData?['flatCode'] ?? _user?.flatCode ?? 'N/A',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
+                              _flatData?['flatCode'] ??
+                                  _user?.flatCode ??
+                                  'N/A',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                             ),
                           ],
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 20),
+                  const Divider(height: 1),
                   const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
                         child: _FlatInfoItem(
                           icon: Icons.layers,
                           label: 'Floor',
-                          value: '${_flatData?['floorNumber'] ?? _user?.floorNumber ?? 'N/A'}',
+                          value:
+                              '${_flatData?['floorNumber'] ?? _user?.floorNumber ?? 'N/A'}',
                         ),
                       ),
                       Expanded(
                         child: _FlatInfoItem(
                           icon: Icons.tag,
                           label: 'Flat Number',
-                          value: _flatData?['flatNumber'] ?? _user?.flatNumber ?? 'N/A',
+                          value:
+                              _flatData?['flatNumber'] ??
+                              _user?.flatNumber ??
+                              'N/A',
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   Row(
                     children: [
                       Expanded(
                         child: _FlatInfoItem(
                           icon: Icons.category,
                           label: 'Flat Type',
-                          value: _flatData?['flatType'] ?? _user?.flatType ?? 'N/A',
+                          value:
+                              _flatData?['flatType'] ??
+                              _user?.flatType ??
+                              'N/A',
                         ),
                       ),
                       if (_flatData?['squareFeet'] != null)
@@ -463,50 +597,49 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
                         ),
                     ],
                   ),
-                  if (_user?.registeredAt != null || _user?.lastUpdatedAt != null) ...[
-                    const SizedBox(height: 12),
-                    const Divider(),
-                    const SizedBox(height: 12),
-                    if (_user?.registeredAt != null)
-                      _FlatInfoItem(
-                        icon: Icons.calendar_today,
-                        label: 'Registered At',
-                        value: _formatDate(_user!.registeredAt!),
-                      ),
-                    if (_user?.lastUpdatedAt != null) ...[
-                      const SizedBox(height: 8),
-                      _FlatInfoItem(
-                        icon: Icons.update,
-                        label: 'Last Updated',
-                        value: _formatDate(_user!.lastUpdatedAt!),
-                      ),
-                    ],
-                  ],
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: _SummaryCard(
-                  title: 'Active Complaints',
-                  value:
-                      '${_dashboardData?['activeComplaints'] ?? _activeComplaints.length}',
-                  subtitle: '${_dashboardData?['totalComplaints'] ?? 0} total',
-                  icon: Icons.description,
-                  color: AppColors.warning,
+                child: _build3DCard(
+                  child: _SummaryCard(
+                    title: 'Active Complaints',
+                    value:
+                        '${_dashboardData?['activeComplaints'] ?? _activeComplaints.length}',
+                    subtitle:
+                        '${_dashboardData?['totalComplaints'] ?? 0} total',
+                    icon: Icons.description,
+                    color: AppColors.warning,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _SummaryCard(
-                  title: 'Notices',
-                  value: '$_unreadNotifications',
-                  subtitle: 'Unread',
-                  icon: Icons.notifications,
-                  color: AppColors.info,
+                child: _build3DCard(
+                  child: _SummaryCard(
+                    title: 'Resolved',
+                    value:
+                        '${_dashboardData?['resolvedComplaints'] ?? _recentCompletions.length}',
+                    subtitle: 'Completed',
+                    icon: Icons.check_circle,
+                    color: AppColors.success,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _build3DCard(
+                  child: _SummaryCard(
+                    title: 'Notices',
+                    value: '$_unreadNotifications',
+                    subtitle: 'Unread',
+                    icon: Icons.notifications,
+                    color: AppColors.info,
+                  ),
                 ),
               ),
             ],
@@ -516,12 +649,453 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
     );
   }
 
+  Widget _build3DCard({required Widget child}) {
+    return Transform(
+      transform: Matrix4.identity()
+        ..setEntry(3, 2, 0.001)
+        ..rotateX(0.01)
+        ..rotateY(-0.01),
+      alignment: FractionalOffset.center,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.15),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+              spreadRadius: 2,
+            ),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildRecentNotices() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.info,
+                          AppColors.info.withOpacity(0.7),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.campaign,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Recent Notices',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const NoticesScreen()),
+                  );
+                },
+                child: Text(
+                  'View All',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ..._recentNotices.map((notice) {
+            return _build3DCard(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(18),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const NoticesScreen()),
+                    );
+                  },
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              _getPriorityColor(
+                                notice['priority'],
+                              ).withOpacity(0.2),
+                              _getPriorityColor(
+                                notice['priority'],
+                              ).withOpacity(0.1),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          _getCategoryIcon(notice['category']),
+                          color: _getPriorityColor(notice['priority']),
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    notice['title'] ?? 'No Title',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (notice['isRead'] == false)
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.info,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              notice['content']?.toString().substring(
+                                    0,
+                                    notice['content'].toString().length > 50
+                                        ? 50
+                                        : notice['content'].toString().length,
+                                  ) ??
+                                  '',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppColors.textSecondary),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (notice['schedule']?['publishAt'] != null) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.access_time,
+                                    size: 14,
+                                    color: AppColors.textLight,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatDateRelative(
+                                      notice['schedule']?['publishAt'],
+                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(color: AppColors.textLight),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: AppColors.textLight),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentCompletions() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppColors.success,
+                          AppColors.success.withOpacity(0.7),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.check_circle,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Recent Completions',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ResidentComplaintsScreen(),
+                    ),
+                  );
+                },
+                child: Text(
+                  'View All',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ..._recentCompletions.take(3).map((complaint) {
+            return _build3DCard(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(18),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ComplaintDetailScreen(
+                          complaintId:
+                              complaint['_id'] ?? complaint['id'] ?? '',
+                        ),
+                      ),
+                    );
+                  },
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.success.withOpacity(0.2),
+                              AppColors.success.withOpacity(0.1),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.check_circle,
+                          color: AppColors.success,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              complaint['title'] ?? 'No Title',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textPrimary,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.success.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    complaint['status'] ?? 'Resolved',
+                                    style: TextStyle(
+                                      color: AppColors.success,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                ),
+                              ],
+                            ),
+                            if (complaint['resolvedAt'] != null ||
+                                complaint['updatedAt'] != null) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.access_time,
+                                    size: 14,
+                                    color: AppColors.textLight,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatDateRelative(
+                                      complaint['resolvedAt'] ??
+                                          complaint['updatedAt'],
+                                    ),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(color: AppColors.textLight),
+                                  ),
+                                  if (complaint['rating'] != null &&
+                                      complaint['rating']['score'] != null) ...[
+                                    const SizedBox(width: 12),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.star,
+                                          size: 14,
+                                          color: AppColors.warning,
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          '${complaint['rating']['score']}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(
+                                                color: AppColors.warning,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: AppColors.textLight),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+
+  IconData _getCategoryIcon(String? category) {
+    switch (category?.toLowerCase()) {
+      case 'general':
+        return Icons.campaign;
+      case 'maintenance':
+        return Icons.build;
+      case 'security':
+        return Icons.security;
+      case 'events':
+        return Icons.celebration;
+      default:
+        return Icons.notifications;
+    }
+  }
+
+  Color _getPriorityColor(String? priority) {
+    switch (priority?.toLowerCase()) {
+      case 'high':
+        return AppColors.error;
+      case 'medium':
+        return AppColors.warning;
+      case 'low':
+        return AppColors.info;
+      default:
+        return AppColors.info;
+    }
+  }
+
   Widget _buildActiveComplaints() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [ 
+        children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -551,81 +1125,78 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
           ),
           const SizedBox(height: 12),
           ..._activeComplaints.take(3).map((complaint) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+            return _build3DCard(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(18),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.description,
+                        color: AppColors.warning,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.description,
-                      color: AppColors.warning,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          complaint['title'] ?? 'No Title',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
-                              ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppColors.textSecondary),
-                        ),
-                        if (complaint['createdAt'] != null) ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.access_time,
-                                size: 12,
-                                color: AppColors.textLight,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _formatDateRelative(complaint['createdAt']),
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(color: AppColors.textLight),
-                              ),
-                            ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            complaint['title'] ?? 'No Title',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppColors.textSecondary),
+                          ),
+                          if (complaint['createdAt'] != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time,
+                                  size: 12,
+                                  color: AppColors.textLight,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _formatDateRelative(complaint['createdAt']),
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(color: AppColors.textLight),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  Chip(
-                    label: Text(complaint['status'] ?? 'Open'),
-                    backgroundColor: _getStatusColor(
-                      complaint['status'],
-                    ).withOpacity(0.2),
-                    labelStyle: TextStyle(
-                      color: _getStatusColor(complaint['status']),
-                      fontSize: 12,
+                    Chip(
+                      label: Text(complaint['status'] ?? 'Open'),
+                      backgroundColor: _getStatusColor(
+                        complaint['status'],
+                      ).withOpacity(0.2),
+                      labelStyle: TextStyle(
+                        color: _getStatusColor(complaint['status']),
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           }).toList(),
@@ -706,7 +1277,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen> {
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
   }
-  
+
   String _formatDateRelative(dynamic date) {
     if (date == null) return '';
     try {
@@ -752,9 +1323,9 @@ class _FlatInfoItem extends StatelessWidget {
             const SizedBox(width: 4),
             Text(
               label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppColors.textSecondary,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
             ),
           ],
         ),
@@ -809,12 +1380,16 @@ class _SummaryCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                title,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(

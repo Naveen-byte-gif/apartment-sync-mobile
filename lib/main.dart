@@ -10,7 +10,6 @@ import 'core/services/tts_service.dart';
 import 'presentation/screens/splash_screen.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/news_provider.dart';
-import 'presentation/providers/chat_provider.dart';
 import 'presentation/providers/story_provider.dart';
 import 'presentation/providers/tts_provider.dart';
 
@@ -108,19 +107,6 @@ class MyApp extends StatelessWidget {
           create: (_) {
             print('🔧 [MyApp] Creating NewsProvider');
             return NewsProvider();
-          },
-          lazy: true,
-        ),
-        ChangeNotifierProvider(
-          create: (_) {
-            print('🔧 [MyApp] Creating ChatProvider');
-            try {
-              return ChatProvider();
-            } catch (e) {
-              print('❌ [MyApp] Error creating ChatProvider: $e');
-              // Return a minimal provider if creation fails
-              return ChatProvider();
-            }
           },
           lazy: true,
         ),

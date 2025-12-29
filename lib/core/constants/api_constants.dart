@@ -1,12 +1,12 @@
 class ApiConstants {
   // Base URL - Update this with your backend URL
-  static const String baseUrl = 'http://192.168.0.107:6500/api';
+  static const String baseUrl = 'http://192.168.0.113:6500/api';
 
   // ------------- AWS URL--------------
   // static const String baseUrl = 'http://13.60.226.11:6500/api';
   // static const String baseUrl = 'https://apartment-sync-backend.onrender.com/api';
   // Socket.IO
-  static const String socketUrl = 'http://192.168.0.107:6500';
+  static const String socketUrl = 'http://192.168.0.113:6500';
 
   // ------------- AWS URL--------------
   // static const String socketUrl = 'http://13.60.226.11:6500';
@@ -30,6 +30,16 @@ class ApiConstants {
 
   // Complaint Endpoints
   static const String complaints = '/complaints';
+  static String complaintById(String id) => '/complaints/$id';
+  static String complaintStatus(String id) => '/complaints/$id/status';
+  static String complaintAssign(String id) => '/complaints/$id/assign';
+  static String complaintUploadAdminMedia(String id) =>
+      '/complaints/$id/upload-admin-media';
+  static String complaintAdminMedia(String id) => '/complaints/$id/admin-media';
+  static String complaintInternalNotes(String id) =>
+      '/complaints/$id/internal-notes';
+  static String complaintPriority(String id) => '/complaints/$id/priority';
+  static String complaintComments(String id) => '/complaints/$id/comments';
 
   // Notice Endpoints
   static const String notices = '/notices';
@@ -44,7 +54,10 @@ class ApiConstants {
   static const String adminBuildings = '/admin/buildings';
   static const String adminUsers = '/admin/users';
   static const String adminBuildingDetails = '/admin/building-details';
+  static const String adminBuildingView = '/admin/building-view';
   static const String adminAvailableFlats = '/admin/available-flats';
+  static const String adminResidents = '/admin/residents';
+  static const String adminResidentsBulkAction = '/admin/residents/bulk-action';
 
   // Helper method to get flat details endpoint
   static String getFlatDetails(
@@ -101,21 +114,6 @@ class ApiConstants {
   static String visitorGenerateQR(String id) => '/visitors/$id/generate-qr';
   static String visitorGenerateOTP(String id) => '/visitors/$id/generate-otp';
 
-  // Chat Endpoints
-  static const String chatCommunity = '/chats/community';
-  static const String chatCommunityMessage = '/chats/community/message';
-  static const String chatPrivate = '/chats/private';
-  static String chatPrivateWithUser(String userId) => '/chats/private/$userId';
-  static String chatPrivateMessage(String chatId) =>
-      '/chats/private/$chatId/message';
-  static String chatMessages(String chatId) => '/chats/$chatId/messages';
-  static String chatMarkRead(String chatId) => '/chats/$chatId/read';
-  static String chatDeleteMessage(String messageId) =>
-      '/chats/message/$messageId';
-  static String chatReportMessage(String messageId) =>
-      '/chats/message/$messageId/report';
-  static const String chatResidents = '/chats/residents';
-  static const String uploadChatMedia = '/chats/upload-media';
 
   // Headers
   static Map<String, String> getHeaders(String? token) {

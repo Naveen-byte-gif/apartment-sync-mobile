@@ -7,7 +7,14 @@ import 'create_complaint_screen.dart';
 import 'complaint_detail_screen.dart';
 
 class ResidentComplaintsScreen extends StatefulWidget {
-  const ResidentComplaintsScreen({super.key});
+  final String? residentId; // Optional: Filter by specific resident ID (for admin view)
+  final String? residentName; // Optional: Resident name for display
+
+  const ResidentComplaintsScreen({
+    super.key,
+    this.residentId,
+    this.residentName,
+  });
 
   @override
   State<ResidentComplaintsScreen> createState() => _ResidentComplaintsScreenState();
@@ -158,7 +165,16 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
     
     setState(() => _isLoading = true);
     try {
-      final response = await ApiService.get('${ApiConstants.complaints}/my-complaints');
+      // If residentId is provided (admin viewing specific resident), use admin endpoint
+      // Otherwise, use the regular my-complaints endpoint
+      String endpoint;
+      if (widget.residentId != null) {
+        endpoint = '${ApiConstants.adminComplaints}?createdBy=${widget.residentId}';
+      } else {
+        endpoint = '${ApiConstants.complaints}/my-complaints';
+      }
+      
+      final response = await ApiService.get(endpoint);
       final loadEndTime = DateTime.now();
       final loadDuration = loadEndTime.difference(loadStartTime).inMilliseconds;
       
@@ -264,7 +280,11 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Complaints'),
+        title: Text(
+          widget.residentName != null
+              ? '${widget.residentName}\'s Complaints'
+              : 'My Complaints',
+        ),
         backgroundColor: AppColors.primary,
         actions: [
           IconButton(
@@ -346,27 +366,30 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
                               'No complaints yet',
                               style: TextStyle(fontSize: 18, color: Colors.grey),
                             ),
-                            const SizedBox(height: 24),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                print('🖱️ [FLUTTER] Create complaint button clicked');
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const CreateComplaintScreen(),
+                            // Only show "Raise New Complaint" button if not viewing from admin side
+                            if (widget.residentId == null) ...[
+                              const SizedBox(height: 24),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  print('🖱️ [FLUTTER] Create complaint button clicked');
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const CreateComplaintScreen(),
+                                    ),
+                                  ).then((_) => _loadComplaints());
+                                },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Raise New Complaint'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                    vertical: 12,
                                   ),
-                                ).then((_) => _loadComplaints());
-                              },
-                              icon: const Icon(Icons.add),
-                              label: const Text('Raise New Complaint'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24,
-                                  vertical: 12,
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       )
@@ -381,8 +404,17 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
                             final statusColor = _getStatusColor(status);
                             final category = complaint['category'] ?? 'Other';
                             
+                            final media = List<Map<String, dynamic>>.from(complaint['media'] ?? []);
+                            final createdAt = complaint['createdAt'] != null
+                                ? DateTime.parse(complaint['createdAt'].toString())
+                                : null;
+                            
                             return Card(
                               margin: const EdgeInsets.only(bottom: 12),
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
                               child: InkWell(
                                 onTap: () {
                                   print('🖱️ [FLUTTER] Complaint tapped: ${complaint['ticketNumber']}');
@@ -396,56 +428,71 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
                                     ),
                                   ).then((_) => _loadComplaints());
                                 },
+                                borderRadius: BorderRadius.circular(16),
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
-                                  child: Row(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Container(
-                                        width: 50,
-                                        height: 50,
-                                        decoration: BoxDecoration(
-                                          color: statusColor.withOpacity(0.2),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Icon(
-                                          _getCategoryIcon(category),
-                                          color: statusColor,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              complaint['title'] ?? 'No Title',
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey.shade600,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              category,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey.shade700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                      Row(
                                         children: [
+                                          Container(
+                                            width: 50,
+                                            height: 50,
+                                            decoration: BoxDecoration(
+                                              color: statusColor.withOpacity(0.2),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(
+                                              _getCategoryIcon(category),
+                                              color: statusColor,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  complaint['title'] ?? 'No Title',
+                                                  style: const TextStyle(
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                                if (createdAt != null) ...[
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.access_time,
+                                                        size: 12,
+                                                        color: Colors.grey.shade600,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        DateFormat('MMM d, yyyy • h:mm a').format(createdAt),
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors.grey.shade600,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
                                           Container(
                                             padding: const EdgeInsets.symmetric(
                                               horizontal: 12,
@@ -465,8 +512,93 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
-                                          const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                                        ],
+                                      ),
+                                      if (media.isNotEmpty) ...[
+                                        const SizedBox(height: 12),
+                                        SizedBox(
+                                          height: 80,
+                                          child: ListView.builder(
+                                            scrollDirection: Axis.horizontal,
+                                            itemCount: media.length > 4 ? 4 : media.length,
+                                            itemBuilder: (context, imgIndex) {
+                                              final imageUrl = media[imgIndex]['url']?.toString() ?? '';
+                                              return Container(
+                                                margin: const EdgeInsets.only(right: 8),
+                                                width: 80,
+                                                height: 80,
+                                                decoration: BoxDecoration(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: Colors.grey.shade300),
+                                                ),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  child: imageUrl.isNotEmpty
+                                                      ? Image.network(
+                                                          imageUrl,
+                                                          fit: BoxFit.cover,
+                                                          errorBuilder: (context, error, stackTrace) {
+                                                            return Container(
+                                                              color: Colors.grey.shade200,
+                                                              child: Icon(
+                                                                Icons.broken_image,
+                                                                color: Colors.grey.shade400,
+                                                              ),
+                                                            );
+                                                          },
+                                                        )
+                                                      : Container(
+                                                          color: Colors.grey.shade200,
+                                                          child: Icon(
+                                                            Icons.image,
+                                                            color: Colors.grey.shade400,
+                                                          ),
+                                                        ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                        if (media.length > 4)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              '+${media.length - 4} more',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade600,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.shade100,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              category,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade700,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          Icon(
+                                            Icons.arrow_forward_ios,
+                                            size: 16,
+                                            color: Colors.grey.shade400,
+                                          ),
                                         ],
                                       ),
                                     ],
@@ -480,20 +612,23 @@ class _ResidentComplaintsScreenState extends State<ResidentComplaintsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          print('🖱️ [FLUTTER] FAB - Create complaint clicked');
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const CreateComplaintScreen(),
-            ),
-          ).then((_) => _loadComplaints());
-        },
-        backgroundColor: AppColors.primary,
-        icon: const Icon(Icons.add),
-        label: const Text('New Complaint'),
-      ),
+      // Only show FloatingActionButton if not viewing from admin side
+      floatingActionButton: widget.residentId == null
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                print('🖱️ [FLUTTER] FAB - Create complaint clicked');
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CreateComplaintScreen(),
+                  ),
+                ).then((_) => _loadComplaints());
+              },
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.add),
+              label: const Text('New Complaint'),
+            )
+          : null,
     );
   }
 

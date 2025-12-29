@@ -8,14 +8,16 @@ class VisitorManagementScreen extends StatefulWidget {
   const VisitorManagementScreen({super.key});
 
   @override
-  State<VisitorManagementScreen> createState() => _VisitorManagementScreenState();
+  State<VisitorManagementScreen> createState() =>
+      _VisitorManagementScreenState();
 }
 
 class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
   List<Map<String, dynamic>> _visitors = [];
   List<Map<String, dynamic>> _filteredVisitors = [];
   bool _isLoading = true;
-  String _selectedFilter = 'all'; // all, pending, checked-in, checked-out, overdue
+  String _selectedFilter =
+      'all'; // all, pending, checked-in, checked-out, overdue
   String _searchQuery = '';
 
   @override
@@ -34,14 +36,14 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
         final userId = userData['_id'] ?? userData['id'];
         if (userId != null) {
           socketService.connect(userId);
-          
+
           socketService.on('visitor_checked_in', (data) {
             if (mounted) {
               _loadVisitors();
               AppMessageHandler.showSuccess(context, 'Visitor checked in');
             }
           });
-          
+
           socketService.on('visitor_checked_out', (data) {
             if (mounted) {
               _loadVisitors();
@@ -90,19 +92,26 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
             } else {
               return false;
             }
-          } else if (visitor['status']?.toLowerCase() != _selectedFilter.replaceAll('-', '')) {
+          } else if (visitor['status']?.toLowerCase() !=
+              _selectedFilter.replaceAll('-', '')) {
             return false;
           }
         }
-        
+
         // Search filter
         if (_searchQuery.isNotEmpty) {
           final query = _searchQuery.toLowerCase();
-          return (visitor['visitorName']?.toString().toLowerCase().contains(query) ?? false) ||
+          return (visitor['visitorName']?.toString().toLowerCase().contains(
+                    query,
+                  ) ??
+                  false) ||
               (visitor['phoneNumber']?.toString().contains(query) ?? false) ||
-              (visitor['visitorType']?.toString().toLowerCase().contains(query) ?? false);
+              (visitor['visitorType']?.toString().toLowerCase().contains(
+                    query,
+                  ) ??
+                  false);
         }
-        
+
         return true;
       }).toList();
     });
@@ -114,9 +123,12 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
         ApiConstants.visitorCheckIn(visitorId),
         {'checkInMethod': 'Manual'},
       );
-      
+
       if (response['success'] == true) {
-        AppMessageHandler.showSuccess(context, 'Visitor checked in successfully');
+        AppMessageHandler.showSuccess(
+          context,
+          'Visitor checked in successfully',
+        );
         _loadVisitors();
       } else {
         AppMessageHandler.handleResponse(context, response);
@@ -132,9 +144,12 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
         ApiConstants.visitorCheckOut(visitorId),
         {},
       );
-      
+
       if (response['success'] == true) {
-        AppMessageHandler.showSuccess(context, 'Visitor checked out successfully');
+        AppMessageHandler.showSuccess(
+          context,
+          'Visitor checked out successfully',
+        );
         _loadVisitors();
       } else {
         AppMessageHandler.handleResponse(context, response);
@@ -151,10 +166,7 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
         title: const Text('Visitor Management'),
         backgroundColor: AppColors.primary,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadVisitors,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadVisitors),
         ],
       ),
       body: Column(
@@ -183,28 +195,29 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                    children: [
-                      'all',
-                      'pending',
-                      'checked-in',
-                      'checked-out',
-                      'overdue',
-                    ].map((filter) {
-                      final isSelected = _selectedFilter == filter;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: FilterChip(
-                          label: Text(filter.toUpperCase()),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setState(() {
-                              _selectedFilter = filter;
-                              _applyFilters();
-                            });
-                          },
-                        ),
-                      );
-                    }).toList(),
+                    children:
+                        [
+                          'all',
+                          'pending',
+                          'checked-in',
+                          'checked-out',
+                          'overdue',
+                        ].map((filter) {
+                          final isSelected = _selectedFilter == filter;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8.0),
+                            child: FilterChip(
+                              label: Text(filter.toUpperCase()),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                setState(() {
+                                  _selectedFilter = filter;
+                                  _applyFilters();
+                                });
+                              },
+                            ),
+                          );
+                        }).toList(),
                   ),
                 ),
               ],
@@ -215,19 +228,17 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredVisitors.isEmpty
-                    ? const Center(
-                        child: Text('No visitors found'),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: _loadVisitors,
-                        child: ListView.builder(
-                          itemCount: _filteredVisitors.length,
-                          itemBuilder: (context, index) {
-                            final visitor = _filteredVisitors[index];
-                            return _buildVisitorCard(visitor);
-                          },
-                        ),
-                      ),
+                ? const Center(child: Text('No visitors found'))
+                : RefreshIndicator(
+                    onRefresh: _loadVisitors,
+                    child: ListView.builder(
+                      itemCount: _filteredVisitors.length,
+                      itemBuilder: (context, index) {
+                        final visitor = _filteredVisitors[index];
+                        return _buildVisitorCard(visitor);
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -244,9 +255,13 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
   Widget _buildVisitorCard(Map<String, dynamic> visitor) {
     final status = visitor['status'] ?? 'Pending';
     final isCheckedIn = status == 'Checked In';
-    final isOverdue = _selectedFilter == 'overdue' || 
-        (isCheckedIn && visitor['expectedCheckOutTime'] != null &&
-         DateTime.now().isAfter(DateTime.parse(visitor['expectedCheckOutTime'])));
+    final isOverdue =
+        _selectedFilter == 'overdue' ||
+        (isCheckedIn &&
+            visitor['expectedCheckOutTime'] != null &&
+            DateTime.now().isAfter(
+              DateTime.parse(visitor['expectedCheckOutTime']),
+            ));
 
     Color statusColor;
     switch (status) {
@@ -304,23 +319,19 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
         trailing: isCheckedIn
             ? ElevatedButton(
                 onPressed: () => _checkOutVisitor(visitor['_id']),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                 child: const Text('Check Out'),
               )
             : status == 'Pending' || status == 'Pre-Approved'
-                ? ElevatedButton(
-                    onPressed: () => _checkInVisitor(visitor['_id']),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                    ),
-                    child: const Text('Check In'),
-                  )
-                : Chip(
-                    label: Text(status),
-                    backgroundColor: statusColor.withOpacity(0.2),
-                  ),
+            ? ElevatedButton(
+                onPressed: () => _checkInVisitor(visitor['_id']),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                child: const Text('Check In'),
+              )
+            : Chip(
+                label: Text(status),
+                backgroundColor: statusColor.withOpacity(0.2),
+              ),
         onTap: () {
           // Navigate to visitor details
           // Navigator.push(context, MaterialPageRoute(builder: (_) => VisitorDetailScreen(visitorId: visitor['_id'])));
@@ -339,4 +350,3 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
     }
   }
 }
-

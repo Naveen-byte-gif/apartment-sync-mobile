@@ -8,7 +8,8 @@ class VisitorPreApprovalScreen extends StatefulWidget {
   const VisitorPreApprovalScreen({super.key});
 
   @override
-  State<VisitorPreApprovalScreen> createState() => _VisitorPreApprovalScreenState();
+  State<VisitorPreApprovalScreen> createState() =>
+      _VisitorPreApprovalScreenState();
 }
 
 class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
@@ -18,7 +19,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
   final _emailController = TextEditingController();
   final _purposeController = TextEditingController();
   final _expectedCheckOutController = TextEditingController();
-  
+
   String? _visitorType;
   bool _isPreApproved = true;
   bool _nightTimeAccess = false;
@@ -50,11 +51,13 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
       }
 
       final userData = jsonDecode(userJson);
-      
+
       final visitorData = {
         'visitorName': _nameController.text.trim(),
         'phoneNumber': _phoneController.text.trim(),
-        'email': _emailController.text.trim().isEmpty ? null : _emailController.text.trim(),
+        'email': _emailController.text.trim().isEmpty
+            ? null
+            : _emailController.text.trim(),
         'visitorType': _visitorType ?? 'Guest',
         'purpose': _purposeController.text.trim(),
         'isPreApproved': _isPreApproved,
@@ -82,7 +85,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
               ? 'Visitor pre-approved successfully'
               : 'Visitor entry created successfully',
         );
-        
+
         // If pre-approved, show QR/OTP options
         if (_isPreApproved && visitor != null) {
           _showQRAndOTPOptions(visitor['_id']);
@@ -109,10 +112,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
           children: [
             const Text(
               'Share Check-In Code',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
             ListTile(
@@ -250,19 +250,17 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                   labelText: 'Visitor Type *',
                   border: OutlineInputBorder(),
                 ),
-                items: [
-                  'Guest',
-                  'Delivery Partner',
-                  'Cab Driver',
-                  'Service Provider',
-                  'Contractor',
-                  'Other',
-                ].map((type) {
-                  return DropdownMenuItem(
-                    value: type,
-                    child: Text(type),
-                  );
-                }).toList(),
+                items:
+                    [
+                      'Guest',
+                      'Delivery Partner',
+                      'Cab Driver',
+                      'Service Provider',
+                      'Contractor',
+                      'Other',
+                    ].map((type) {
+                      return DropdownMenuItem(value: type, child: Text(type));
+                    }).toList(),
                 onChanged: (value) {
                   setState(() => _visitorType = value);
                 },
@@ -274,7 +272,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              
+
               // Visitor Name
               TextFormField(
                 controller: _nameController,
@@ -290,7 +288,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              
+
               // Phone Number
               TextFormField(
                 controller: _phoneController,
@@ -312,7 +310,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              
+
               // Email (Optional)
               TextFormField(
                 controller: _emailController,
@@ -323,7 +321,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 16),
-              
+
               // Purpose
               TextFormField(
                 controller: _purposeController,
@@ -340,7 +338,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              
+
               // Number of Visitors
               Row(
                 children: [
@@ -369,7 +367,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              
+
               // Expected Check-out Time
               TextFormField(
                 controller: _expectedCheckOutController,
@@ -380,7 +378,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              
+
               // Pre-approve Toggle
               SwitchListTile(
                 title: const Text('Pre-approve Visitor'),
@@ -390,7 +388,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                   setState(() => _isPreApproved = value);
                 },
               ),
-              
+
               // Night-time Access
               SwitchListTile(
                 title: const Text('Allow Night-time Access'),
@@ -401,7 +399,7 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
                 },
               ),
               const SizedBox(height: 24),
-              
+
               // Submit Button
               ElevatedButton(
                 onPressed: _isLoading ? null : _createVisitor,
@@ -423,4 +421,3 @@ class _VisitorPreApprovalScreenState extends State<VisitorPreApprovalScreen> {
     );
   }
 }
-

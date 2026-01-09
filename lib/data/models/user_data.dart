@@ -14,6 +14,8 @@ class UserData {
   final String? profilePicture;
   final DateTime? registeredAt;
   final DateTime? lastUpdatedAt;
+  final bool? isOnline;
+  final DateTime? lastSeen;
 
   UserData({
     required this.id,
@@ -31,6 +33,8 @@ class UserData {
     this.profilePicture,
     this.registeredAt,
     this.lastUpdatedAt,
+    this.isOnline,
+    this.lastSeen,
   });
 
   factory UserData.fromJson(Map<String, dynamic> json) {
@@ -76,6 +80,10 @@ class UserData {
       lastUpdatedAt: json['lastUpdatedAt'] != null
           ? DateTime.tryParse(json['lastUpdatedAt'].toString())
           : null,
+      isOnline: json['isOnline'] as bool?,
+      lastSeen: json['lastSeen'] != null
+          ? DateTime.tryParse(json['lastSeen'].toString())
+          : null,
     );
   }
 
@@ -96,6 +104,8 @@ class UserData {
       'profilePicture': profilePicture,
       'registeredAt': registeredAt?.toIso8601String(),
       'lastUpdatedAt': lastUpdatedAt?.toIso8601String(),
+      'isOnline': isOnline,
+      'lastSeen': lastSeen?.toIso8601String(),
     };
   }
 }

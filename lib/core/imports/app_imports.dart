@@ -27,6 +27,7 @@ export '../services/socket_service.dart';
 export '../services/error_handler.dart';
 export '../services/tts_service.dart';
 export '../services/story_service.dart';
+export '../services/chat_service.dart';
 
 // Core constants
 export '../constants/api_constants.dart';

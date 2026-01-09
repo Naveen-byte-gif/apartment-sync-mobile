@@ -1,5 +1,6 @@
 import '../../../core/imports/app_imports.dart';
 import '../../../data/models/user_data.dart';
+import '../../widgets/users_empty_state_widget.dart';
 import 'create_user_screen.dart';
 import 'dart:convert';
 
@@ -14,7 +15,7 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
   List<UserData> _users = [];
   List<UserData> _filteredUsers = [];
   bool _isLoading = true;
-  String _selectedFilter = 'all'; // all, resident, staff
+  String _selectedFilter = 'resident'; // resident, staff (removed 'all')
   String _searchQuery = '';
   Map<String, dynamic>? _statistics;
   List<Map<String, dynamic>> _allBuildings = [];
@@ -25,6 +26,20 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     super.initState();
     _loadBuildings();
     _setupSocketListeners();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Check if building code has changed in storage
+    final currentStoredCode = StorageService.getString(AppConstants.selectedBuildingKey);
+    if (currentStoredCode != _selectedBuildingCode && currentStoredCode != null) {
+      // Building code changed, reload data
+      setState(() {
+        _selectedBuildingCode = currentStoredCode;
+      });
+      _loadUsers();
+    }
   }
 
   void _setupSocketListeners() {
@@ -77,10 +92,25 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
           _allBuildings = List<Map<String, dynamic>>.from(
             response['data']?['buildings'] ?? [],
           );
-          if (_allBuildings.isNotEmpty && _selectedBuildingCode == null) {
-            _selectedBuildingCode =
-                StorageService.getString(AppConstants.selectedBuildingKey) ??
-                _allBuildings.first['code'];
+          
+          // Validate stored building code against fetched buildings
+          if (_allBuildings.isNotEmpty) {
+            final storedCode = StorageService.getString(AppConstants.selectedBuildingKey);
+            
+            // Check if stored code exists in the fetched buildings
+            final isValidCode = storedCode != null && 
+                _allBuildings.any((b) => b['code'] == storedCode);
+            
+            if (isValidCode) {
+              _selectedBuildingCode = storedCode;
+            } else {
+              // Use first building and update storage
+              _selectedBuildingCode = _allBuildings.first['code'];
+              StorageService.setString(
+                AppConstants.selectedBuildingKey,
+                _selectedBuildingCode!,
+              );
+            }
           }
         });
         _loadUsers();
@@ -130,22 +160,37 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
     }
   }
 
+  /// Efficiently filter users for large datasets (550+ users)
+  /// Uses optimized string matching with case-insensitive search
   void _applyFilters() {
     setState(() {
+      final query = _searchQuery.trim().toLowerCase();
+      final isSearchActive = query.isNotEmpty;
+      
       _filteredUsers = _users.where((user) {
-        // Role filter
-        if (_selectedFilter != 'all' && user.role != _selectedFilter) {
+        // Role filter (required - no 'all' option)
+        if (user.role != _selectedFilter) {
           return false;
         }
-        // Search filter
-        if (_searchQuery.isNotEmpty) {
-          final query = _searchQuery.toLowerCase();
-          return user.fullName.toLowerCase().contains(query) ||
-              user.phoneNumber.contains(query) ||
-              (user.email?.toLowerCase().contains(query) ?? false) ||
-              (user.flatNumber?.toLowerCase().contains(query) ?? false) ||
-              (user.flatCode?.toLowerCase().contains(query) ?? false);
+        
+        // Search filter (only if search query exists)
+        if (isSearchActive) {
+          // Optimized search: check most common fields first
+          final nameMatch = user.fullName.toLowerCase().contains(query);
+          final phoneMatch = user.phoneNumber.contains(query);
+          
+          if (nameMatch || phoneMatch) {
+            return true;
+          }
+          
+          // Check optional fields
+          final emailMatch = user.email?.toLowerCase().contains(query) ?? false;
+          final flatNumberMatch = user.flatNumber?.toLowerCase().contains(query) ?? false;
+          final flatCodeMatch = user.flatCode?.toLowerCase().contains(query) ?? false;
+          
+          return emailMatch || flatNumberMatch || flatCodeMatch;
         }
+        
         return true;
       }).toList();
     });
@@ -155,79 +200,80 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Users Management'),
-        backgroundColor: AppColors.primary,
-        elevation: 0,
-        actions: [
-          // Building selector (if multiple buildings)
-          if (_allBuildings.length > 1)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.apartment),
-              tooltip: 'Select Building',
-              onSelected: (code) {
-                setState(() {
-                  _selectedBuildingCode = code;
-                  StorageService.setString(
-                    AppConstants.selectedBuildingKey,
-                    code,
-                  );
-                });
-                _loadUsers();
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'all',
-                  child: Row(
-                    children: [
-                      Icon(Icons.all_inclusive, size: 20),
-                      SizedBox(width: 8),
-                      Text('All Buildings'),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
-                ..._allBuildings.map(
-                  (building) => PopupMenuItem(
-                    value: building['code'],
-                    child: Row(
-                      children: [
-                        Icon(
-                          _selectedBuildingCode == building['code']
-                              ? Icons.check_circle
-                              : Icons.circle_outlined,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            building['name'] ?? 'Unknown',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Add User',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CreateUserScreen()),
-              ).then((_) => _loadUsers());
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _loadUsers,
-          ),
-        ],
-      ),
+      // AppBar removed - using parent AppBar from admin_dashboard_screen
+      // appBar: AppBar(
+      //   title: const Text('Users Management'),
+      //   backgroundColor: AppColors.primary,
+      //   elevation: 0,
+      //   actions: [
+      //     // Building selector (if multiple buildings)
+      //     if (_allBuildings.length > 1)
+      //       PopupMenuButton<String>(
+      //         icon: const Icon(Icons.apartment),
+      //         tooltip: 'Select Building',
+      //         onSelected: (code) {
+      //           setState(() {
+      //             _selectedBuildingCode = code;
+      //             StorageService.setString(
+      //               AppConstants.selectedBuildingKey,
+      //               code,
+      //             );
+      //           });
+      //           _loadUsers();
+      //         },
+      //         itemBuilder: (context) => [
+      //           const PopupMenuItem(
+      //             value: 'all',
+      //             child: Row(
+      //               children: [
+      //                 Icon(Icons.all_inclusive, size: 20),
+      //                 SizedBox(width: 8),
+      //                 Text('All Buildings'),
+      //               ],
+      //             ),
+      //           ),
+      //           const PopupMenuDivider(),
+      //           ..._allBuildings.map(
+      //             (building) => PopupMenuItem(
+      //               value: building['code'],
+      //               child: Row(
+      //                 children: [
+      //                   Icon(
+      //                     _selectedBuildingCode == building['code']
+      //                         ? Icons.check_circle
+      //                         : Icons.circle_outlined,
+      //                     size: 20,
+      //                   ),
+      //                   const SizedBox(width: 8),
+      //                   Expanded(
+      //                     child: Text(
+      //                       building['name'] ?? 'Unknown',
+      //                       overflow: TextOverflow.ellipsis,
+      //                     ),
+      //                   ),
+      //                 ],
+      //               ),
+      //             ),
+      //           ),
+      //         ],
+      //       ),
+      //     IconButton(
+      //       icon: const Icon(Icons.add),
+      //       tooltip: 'Add User',
+      //       onPressed: () {
+      //         Navigator.push(
+      //           context,
+      //           MaterialPageRoute(builder: (_) => const CreateUserScreen()),
+      //         ).then((_) => _loadUsers());
+      //       },
+      //     ),
+      //     IconButton(
+      //       icon: const Icon(Icons.refresh),
+      //       tooltip: 'Refresh',
+      //       onPressed: _loadUsers,
+      //     ),
+      //   ],
+      // ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -330,11 +376,6 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
           SegmentedButton<String>(
             segments: const [
               ButtonSegment(
-                value: 'all',
-                label: Text('All'),
-                icon: Icon(Icons.all_inclusive, size: 18),
-              ),
-              ButtonSegment(
                 value: 'resident',
                 label: Text('Residents'),
                 icon: Icon(Icons.home, size: 18),
@@ -360,54 +401,16 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
 
   Widget _buildUsersList() {
     if (_filteredUsers.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _searchQuery.isNotEmpty ? Icons.search_off : Icons.people_outline,
-              size: 80,
-              color: AppColors.textSecondary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _searchQuery.isNotEmpty
-                  ? 'No users found matching "$_searchQuery"'
-                  : 'No users yet',
-              style: TextStyle(
-                fontSize: 18,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            if (_searchQuery.isEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Start by creating your first user',
-                style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const CreateUserScreen()),
-                  ).then((_) => _loadUsers());
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('Create First User'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+      return UsersEmptyStateWidget(
+        hasSearchQuery: _searchQuery.trim().isNotEmpty,
+        searchQuery: _searchQuery.trim(),
+        selectedFilter: _selectedFilter,
+        onCreateUser: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CreateUserScreen()),
+          ).then((_) => _loadUsers());
+        },
       );
     }
 

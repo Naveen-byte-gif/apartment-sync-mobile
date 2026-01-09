@@ -1,6 +1,5 @@
 import '../../../core/imports/app_imports.dart';
 import '../../../core/services/notification_service.dart';
-import '../../../core/utils/phone_formatter.dart';
 import '../../providers/auth_provider.dart';
 import '../home/home_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
@@ -8,6 +7,7 @@ import '../staff/staff_dashboard_screen.dart';
 import 'user_register_screen.dart';
 import 'admin_login_screen.dart';
 import 'otp_verification_screen.dart';
+import 'forgot_password_screen.dart';
 import '../../../data/models/user_data.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -30,28 +30,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _sendOTPForLogin() async {
     print('🖱️ [FLUTTER] Send OTP button clicked');
-    final identifier = _identifierController.text.trim();
-    print('📱 [FLUTTER] Identifier: $identifier');
+    final email = _identifierController.text.trim();
+    print('📧 [FLUTTER] Email: $email');
 
-    // Check if it's a phone number (10 digits) or email
-    final cleanedPhone = PhoneFormatter.formatForAPI(identifier);
-    final isPhone = PhoneFormatter.isValidIndianPhone(cleanedPhone);
-    print('📱 [FLUTTER] Is Phone: $isPhone');
-
-    if (!isPhone && !identifier.contains('@')) {
+    // Validate email format
+    if (!email.contains('@') || !email.contains('.')) {
       HapticFeedback.mediumImpact();
       AppMessageHandler.showError(
         context,
-        'Please enter a valid phone number or email',
+        'Please enter a valid email address',
       );
       return;
     }
 
-    if (isPhone && !PhoneFormatter.isValidIndianPhone(cleanedPhone)) {
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(email)) {
       HapticFeedback.mediumImpact();
       AppMessageHandler.showError(
         context,
-        'Please enter a valid 10-digit Indian phone number',
+        'Please enter a valid email address',
       );
       return;
     }
@@ -62,8 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       print('📤 [FLUTTER] Sending OTP request...');
       final response = await ApiService.post(ApiConstants.sendOTP, {
-        'phoneNumber': isPhone ? cleanedPhone : null,
-        'email': !isPhone ? identifier : null,
+        'email': email,
         'purpose': 'login',
       });
 
@@ -75,18 +71,16 @@ class _LoginScreenState extends State<LoginScreen> {
           context,
           response,
           onSuccess: () {
-            if (isPhone) {
-              HapticFeedback.mediumImpact();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => OTPVerificationScreen(
-                    phoneNumber: cleanedPhone,
-                    purpose: 'login',
-                  ),
+            HapticFeedback.mediumImpact();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OTPVerificationScreen(
+                  email: email,
+                  purpose: 'login',
                 ),
-              );
-            }
+              ),
+            );
           },
         );
       }
@@ -380,29 +374,27 @@ class _LoginScreenState extends State<LoginScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             const SizedBox(height: 20),
-                            // Email or Phone Number
+                            // Email
                             TextFormField(
                               controller: _identifierController,
                               keyboardType: TextInputType.emailAddress,
                               decoration: InputDecoration(
-                                labelText: 'Email or Phone Number',
-                                hintText: 'Enter email or phone number',
-                                prefixIcon: const Icon(Icons.person),
+                                labelText: 'Email',
+                                hintText: 'Enter your email address',
+                                prefixIcon: const Icon(Icons.email),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
-                                  return 'Please enter your email or phone number';
+                                  return 'Please enter your email address';
                                 }
-                                final isPhone = RegExp(
-                                  r'^[6-9]\d{9}$',
-                                ).hasMatch(value);
-                                final isEmail =
-                                    value.contains('@') && value.contains('.');
-                                if (!isPhone && !isEmail) {
-                                  return 'Please enter a valid email or phone number';
+                                final emailRegex = RegExp(
+                                  r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                                );
+                                if (!emailRegex.hasMatch(value)) {
+                                  return 'Please enter a valid email address';
                                 }
                                 return null;
                               },
@@ -464,7 +456,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 if (!_isOTPLogin)
                                   TextButton(
                                     onPressed: () {
-                                      // TODO: Implement forgot password
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const ForgotPasswordScreen(),
+                                        ),
+                                      );
                                     },
                                     child: const Text(
                                       'Forgot Password?',

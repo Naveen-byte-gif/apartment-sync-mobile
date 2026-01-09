@@ -110,6 +110,54 @@ class SocketService {
     _socket?.on('user_created', (data) {
       print('📡 [FLUTTER] User created event: $data');
     });
+
+    // Chat events - Community Chat
+    _socket?.on('new_community_message', (data) {
+      print('📡 [FLUTTER] New community message event: $data');
+    });
+
+    _socket?.on('message_pinned', (data) {
+      print('📡 [FLUTTER] Message pinned event: $data');
+    });
+
+    _socket?.on('message_reaction', (data) {
+      print('📡 [FLUTTER] Message reaction event: $data');
+    });
+
+    // Chat events - P2P Chat
+    _socket?.on('p2p_message_sent', (data) {
+      print('📡 [FLUTTER] P2P message sent event: $data');
+    });
+
+    _socket?.on('p2p_message_received', (data) {
+      print('📡 [FLUTTER] P2P message received event: $data');
+    });
+
+    // Chat events - Complaint Chat
+    _socket?.on('complaint_message', (data) {
+      print('📡 [FLUTTER] Complaint message event: $data');
+    });
+
+    // User online/offline events
+    _socket?.on('user_online', (data) {
+      print('📡 [FLUTTER] User online event: $data');
+    });
+
+    _socket?.on('user_offline', (data) {
+      print('📡 [FLUTTER] User offline event: $data');
+    });
+  }
+
+  /// Join chat room
+  void joinChatRoom(String roomName) {
+    _socket?.emit('join_chat_room', roomName);
+    print('🔌 [FLUTTER] Joining chat room: $roomName');
+  }
+
+  /// Leave chat room
+  void leaveChatRoom(String roomName) {
+    _socket?.emit('leave_chat_room', roomName);
+    print('🔌 [FLUTTER] Leaving chat room: $roomName');
   }
 
   void disconnect() {

@@ -2,23 +2,23 @@ import '../../../core/imports/app_imports.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../data/models/user_data.dart';
 import '../../../core/constants/app_constants.dart';
-import '../../../core/utils/phone_formatter.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import '../home/home_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
 import '../staff/staff_dashboard_screen.dart';
+import 'admin_login_screen.dart';
 
 class OTPVerificationScreen extends StatefulWidget {
-  final String phoneNumber;
-  final String purpose; // 'registration' or 'login'
+  final String email; // Email address for OTP verification
+  final String purpose; // 'registration', 'login', 'forgot-password', or 'admin_registration'
   final Map<String, dynamic>? userData; // For registration only
   final String? roleContext; // For role-based routing
 
   const OTPVerificationScreen({
     super.key,
-    required this.phoneNumber,
+    required this.email,
     required this.purpose,
     this.userData,
     this.roleContext,
@@ -113,7 +113,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
         final response = await ApiService.post(
           ApiConstants.verifyOTPRegister,
           {
-            'phoneNumber': widget.phoneNumber,
+            'email': widget.email,
             'otp': otp,
             'userData': widget.userData,
           },
@@ -191,11 +191,11 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
         final response = await ApiService.post(
           ApiConstants.adminVerifyOTPRegister,
           {
-            'phoneNumber': widget.phoneNumber,
+            'email': widget.email,
             'otp': otp,
             'fullName': widget.userData?['fullName'],
-            'email': widget.userData?['email'],
             'password': widget.userData?['password'],
+            'phoneNumber': widget.userData?['phoneNumber'], // Optional
           },
         );
 
@@ -224,16 +224,13 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
             if (mounted) {
               AppMessageHandler.showSuccess(
                 context,
-                response['message'] ?? 'Admin registration successful',
+                response['message'] ?? 'Admin registration successful. Please login to continue.',
+                showDialog: true,
                 onOkPressed: () {
-                  // Connect socket
-                  final user = UserData.fromJson(userData);
-                  SocketService().connect(user.id);
-                  
-                  // Navigate to admin dashboard
+                  // Navigate back to admin login screen
                   Navigator.pushAndRemoveUntil(
                     context,
-                    MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+                    MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
                     (route) => false,
                   );
                 },
@@ -243,17 +240,27 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
         } else {
           // Clear OTP on error
           _clearOTP();
+          HapticFeedback.mediumImpact();
+          
+          if (mounted) {
+            // Show error as dialog popup
+            AppMessageHandler.showError(
+              context,
+              response['message'] ?? 'Invalid OTP. Please try again.',
+              showDialog: true,
+            );
+          }
+          
           setState(() {
             _errorMessage = response['message'] ?? 'Invalid OTP. Please try again.';
           });
-          HapticFeedback.mediumImpact();
         }
       } else {
         // Login flow
         final response = await ApiService.post(
           ApiConstants.verifyOTPLogin,
           {
-            'phoneNumber': widget.phoneNumber,
+            'email': widget.email,
             'otp': otp,
           },
         );
@@ -360,7 +367,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
       final response = await ApiService.post(
         ApiConstants.sendOTP,
         {
-          'phoneNumber': widget.phoneNumber,
+          'email': widget.email,
           'purpose': widget.purpose,
         },
       );
@@ -379,7 +386,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
           HapticFeedback.mediumImpact();
           AppMessageHandler.showSuccess(
             context,
-            'OTP sent successfully to ${PhoneFormatter.formatForDisplay(widget.phoneNumber)}',
+            'OTP sent successfully to ${widget.email}',
           );
         }
       } else {
@@ -478,7 +485,7 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
             const SizedBox(height: 12),
             // Description
             Text(
-              'We sent a 6-digit code to\n${PhoneFormatter.formatForDisplay(widget.phoneNumber)}',
+              'We sent a 6-digit code to\n${widget.email}',
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.grey,
@@ -629,11 +636,11 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            // Change Phone Number
+            // Change Email
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text(
-                'Change Phone Number',
+                'Change Email',
                 style: TextStyle(color: AppColors.primary),
               ),
             ),

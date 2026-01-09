@@ -14,29 +14,213 @@ class NotificationService {
       FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
-  
-  // Global navigator key for deep linking from terminated state
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-  static Future<void> initialize() async {
+  // Global navigator key for deep linking from terminated state
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
+
+  /// Check FCM connection status
+  static Future<Map<String, dynamic>> checkConnectionStatus() async {
+    print('\n🔍 ========== [FLUTTER FCM] CONNECTION STATUS CHECK ==========');
+    final status = <String, dynamic>{
+      'firebaseInitialized': false,
+      'permissionGranted': false,
+      'tokenAvailable': false,
+      'tokenSentToBackend': false,
+      'token': null,
+      'permissionStatus': null,
+      'errors': <String>[],
+    };
+
     try {
-      // Request permission (handles Android 13+ POST_NOTIFICATIONS automatically)
-      NotificationSettings settings = await _firebaseMessaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        provisional: false, // Explicit permission required
+      // Check Firebase Core
+      print('🔍 [FCM STATUS] Checking Firebase Core initialization...');
+      try {
+        final firebaseApp = Firebase.app();
+        status['firebaseInitialized'] = true;
+        status['firebaseAppName'] = firebaseApp.name;
+        print(
+          '✅ [FCM STATUS] Firebase Core is initialized: ${firebaseApp.name}',
+        );
+      } catch (e) {
+        status['errors'].add('Firebase Core not initialized: $e');
+        print('❌ [FCM STATUS] Firebase Core NOT initialized: $e');
+      }
+
+      // Check FCM permission
+      print('🔍 [FCM STATUS] Checking notification permission...');
+      try {
+        final settings = await _firebaseMessaging.getNotificationSettings();
+        status['permissionStatus'] = settings.authorizationStatus.toString();
+        status['permissionGranted'] =
+            settings.authorizationStatus == AuthorizationStatus.authorized ||
+            settings.authorizationStatus == AuthorizationStatus.provisional;
+        print(
+          '📱 [FCM STATUS] Permission status: ${settings.authorizationStatus}',
+        );
+        print('📱 [FCM STATUS] Alert enabled: ${settings.alert}');
+        print('📱 [FCM STATUS] Badge enabled: ${settings.badge}');
+        print('📱 [FCM STATUS] Sound enabled: ${settings.sound}');
+
+        if (status['permissionGranted']) {
+          print('✅ [FCM STATUS] Notification permission GRANTED');
+        } else {
+          print('❌ [FCM STATUS] Notification permission DENIED');
+          status['errors'].add('Notification permission denied');
+        }
+      } catch (e) {
+        status['errors'].add('Failed to check permission: $e');
+        print('❌ [FCM STATUS] Error checking permission: $e');
+      }
+
+      // Check FCM token
+      print('🔍 [FCM STATUS] Checking FCM token...');
+      try {
+        final token = await _firebaseMessaging.getToken();
+        if (token != null && token.isNotEmpty) {
+          status['tokenAvailable'] = true;
+          status['token'] = token;
+          status['tokenLength'] = token.length;
+          print('✅ [FCM STATUS] FCM token is AVAILABLE');
+          print('✅ [FCM STATUS] Token length: ${token.length}');
+          print(
+            '✅ [FCM STATUS] Token preview: ${token.substring(0, min(50, token.length))}...',
+          );
+        } else {
+          status['errors'].add('FCM token is null or empty');
+          print('❌ [FCM STATUS] FCM token is NULL or EMPTY');
+        }
+      } catch (e) {
+        status['errors'].add('Failed to get token: $e');
+        print('❌ [FCM STATUS] Error getting token: $e');
+      }
+
+      // Check if token sent to backend
+      print('🔍 [FCM STATUS] Checking if token sent to backend...');
+      try {
+        final authToken = ApiService.token;
+        if (authToken != null && authToken.isNotEmpty) {
+          final pendingToken = StorageService.getString('pending_fcm_token');
+          status['tokenSentToBackend'] = pendingToken == null;
+          if (pendingToken != null) {
+            status['errors'].add(
+              'Token pending (not authenticated when token was received)',
+            );
+            print(
+              '⚠️ [FCM STATUS] Token is PENDING (stored locally, waiting for auth)',
+            );
+          } else {
+            print(
+              '✅ [FCM STATUS] Token sent to backend (no pending token found)',
+            );
+          }
+        } else {
+          status['errors'].add(
+            'User not authenticated - cannot verify backend token',
+          );
+          print(
+            '⚠️ [FCM STATUS] User not authenticated - cannot verify backend token status',
+          );
+        }
+      } catch (e) {
+        status['errors'].add('Error checking backend token: $e');
+        print('❌ [FCM STATUS] Error checking backend token: $e');
+      }
+
+      // Overall status
+      final isConnected =
+          status['firebaseInitialized'] == true &&
+          status['permissionGranted'] == true &&
+          status['tokenAvailable'] == true;
+
+      status['isConnected'] = isConnected;
+
+      print('\n📊 [FCM STATUS] ========== CONNECTION SUMMARY ==========');
+      print(
+        '📊 [FCM STATUS] Firebase Initialized: ${status['firebaseInitialized']}',
+      );
+      print(
+        '📊 [FCM STATUS] Permission Granted: ${status['permissionGranted']}',
+      );
+      print('📊 [FCM STATUS] Token Available: ${status['tokenAvailable']}');
+      print(
+        '📊 [FCM STATUS] Token Sent to Backend: ${status['tokenSentToBackend']}',
+      );
+      print(
+        '📊 [FCM STATUS] Overall Status: ${isConnected ? "✅ CONNECTED" : "❌ NOT CONNECTED"}',
       );
 
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        print('✅ User granted notification permission');
-      } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
-        print('⚠️ User granted provisional notification permission');
-      } else {
-        print('⚠️ User denied notification permission');
+      if (status['errors'].isNotEmpty) {
+        print('📊 [FCM STATUS] Errors found: ${status['errors'].length}');
+        for (var error in status['errors']) {
+          print('   ⚠️ $error');
+        }
       }
+
+      print('📊 [FCM STATUS] ==========================================\n');
+
+      return status;
+    } catch (e, stackTrace) {
+      print('❌ [FCM STATUS] Exception during status check: $e');
+      print('❌ [FCM STATUS] Stack: $stackTrace');
+      status['errors'].add('Exception during status check: $e');
+      return status;
+    }
+  }
+
+  static Future<void> initialize() async {
+    print('\n🔧 ========== [FLUTTER FCM] INITIALIZATION START ==========');
+    print('🔧 [FLUTTER FCM] Timestamp: ${DateTime.now().toIso8601String()}');
+
+    // Check Firebase Core first
+    try {
+      final firebaseApp = Firebase.app();
+      print(
+        '✅ [FLUTTER FCM] Firebase Core is initialized: ${firebaseApp.name}',
+      );
     } catch (e) {
-      print('⚠️ Firebase Messaging permission request failed: $e');
+      print('❌ [FLUTTER FCM] CRITICAL: Firebase Core NOT initialized!');
+      print('❌ [FLUTTER FCM] Error: $e');
+      print('❌ [FLUTTER FCM] FCM will not work without Firebase Core');
+      print(
+        '❌ [FLUTTER FCM] Check: Is Firebase.initializeApp() called in main()?',
+      );
+      return;
+    }
+
+    try {
+      // Request permission (handles Android 13+ POST_NOTIFICATIONS automatically)
+      print('🔧 [FLUTTER FCM] Requesting notification permission...');
+      NotificationSettings settings = await _firebaseMessaging
+          .requestPermission(
+            alert: true,
+            badge: true,
+            sound: true,
+            provisional: false, // Explicit permission required
+          );
+
+      print('📱 [FLUTTER FCM] Permission request completed');
+      print(
+        '📱 [FLUTTER FCM] Authorization status: ${settings.authorizationStatus}',
+      );
+      print('📱 [FLUTTER FCM] Alert: ${settings.alert}');
+      print('📱 [FLUTTER FCM] Badge: ${settings.badge}');
+      print('📱 [FLUTTER FCM] Sound: ${settings.sound}');
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        print('✅ [FLUTTER FCM] User granted notification permission');
+      } else if (settings.authorizationStatus ==
+          AuthorizationStatus.provisional) {
+        print(
+          '⚠️ [FLUTTER FCM] User granted provisional notification permission',
+        );
+      } else {
+        print('❌ [FLUTTER FCM] User DENIED notification permission');
+        print('❌ [FLUTTER FCM] FCM will not work without permission');
+      }
+    } catch (e, stackTrace) {
+      print('❌ [FLUTTER FCM] Permission request failed: $e');
+      print('❌ [FLUTTER FCM] Stack: $stackTrace');
       // Continue without Firebase messaging
     }
 
@@ -66,7 +250,8 @@ class NotificationService {
     try {
       await _localNotifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(
             const AndroidNotificationChannel(
               'apartmentsync_notifications',
@@ -84,63 +269,153 @@ class NotificationService {
     }
 
     try {
+      print('\n📱 ========== [FLUTTER FCM] INITIALIZATION ==========');
+      print('📱 [FLUTTER FCM] Requesting FCM token from Firebase...');
+
       // Get FCM token
       String? token = await _firebaseMessaging.getToken();
+
       if (token != null) {
-        print('✅ FCM Token: $token');
+        print('✅ [FLUTTER FCM] SUCCESS: FCM token received from Firebase');
+        print('✅ [FLUTTER FCM] Token length: ${token.length}');
+        print(
+          '✅ [FLUTTER FCM] Token preview: ${token.substring(0, min(50, token.length))}...',
+        );
+        print('✅ [FLUTTER FCM] Full token: $token');
         // Send token to backend
         await _sendTokenToBackend(token);
+      } else {
+        print('❌ [FLUTTER FCM] ERROR: Failed to get FCM token from Firebase');
+        print('❌ [FLUTTER FCM] Token is null');
+        print('📱 [FLUTTER FCM] Check: Is Firebase properly configured?');
+        print(
+          '📱 [FLUTTER FCM] Check: Is google-services.json/GoogleService-Info.plist present?',
+        );
       }
 
       // Listen for token refresh
+      print('🔧 [FLUTTER FCM] Setting up token refresh listener...');
       _firebaseMessaging.onTokenRefresh.listen((newToken) {
-        print('🔄 FCM Token refreshed: $newToken');
+        print('\n🔄 ========== [FLUTTER FCM] TOKEN REFRESH ==========');
+        print(
+          '🔄 [FLUTTER FCM] New token received: ${newToken.substring(0, min(50, newToken.length))}...',
+        );
+        print('🔄 [FLUTTER FCM] Token length: ${newToken.length}');
         // Only send if user is authenticated
         _sendTokenToBackend(newToken);
+        print(
+          '🔄 ========== [FLUTTER FCM] TOKEN REFRESH COMPLETE ==========\n',
+        );
       });
+      print('✅ [FLUTTER FCM] Token refresh listener registered');
 
       // Handle foreground messages (app is open)
+      print('🔧 [FLUTTER FCM] Setting up foreground message listener...');
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+      print('✅ [FLUTTER FCM] Foreground message listener registered');
 
       // Handle background/terminated messages (app opened from notification)
+      print('🔧 [FLUTTER FCM] Setting up background message listener...');
       FirebaseMessaging.onMessageOpenedApp.listen(_handleBackgroundMessage);
-      
+      print('✅ [FLUTTER FCM] Background message listener registered');
+
       // Check if app was opened from terminated state
+      print('🔧 [FLUTTER FCM] Checking for initial message...');
       final initialMessage = await _firebaseMessaging.getInitialMessage();
       if (initialMessage != null) {
-        print('📱 App opened from terminated state via notification');
+        print(
+          '📱 [FLUTTER FCM] App opened from terminated state via notification',
+        );
         _handleTerminatedMessage(initialMessage);
+      } else {
+        print('ℹ️ [FLUTTER FCM] No initial message (app started normally)');
       }
-    } catch (e) {
-      print('⚠️ Firebase Messaging setup failed: $e');
-      print('⚠️ Push notifications will not work until Firebase is configured');
+
+      print('✅ [FLUTTER FCM] All listeners registered successfully');
+      print('🔧 ========== [FLUTTER FCM] INITIALIZATION COMPLETE ==========\n');
+
+      // Print final connection status
+      await Future.delayed(const Duration(milliseconds: 500));
+      await checkConnectionStatus();
+    } catch (e, stackTrace) {
+      print('\n❌ ========== [FLUTTER FCM] INITIALIZATION FAILED ==========');
+      print('❌ [FLUTTER FCM] Error: $e');
+      print('❌ [FLUTTER FCM] Stack trace: $stackTrace');
+      print(
+        '❌ [FLUTTER FCM] Push notifications will not work until this is fixed',
+      );
+      print('❌ ========== [FLUTTER FCM] INITIALIZATION ERROR ==========\n');
     }
   }
 
   static Future<void> _sendTokenToBackend(String token) async {
+    print('\n📱 ========== [FLUTTER FCM] SEND TOKEN TO BACKEND ==========');
+    print('📱 [FLUTTER FCM] Timestamp: ${DateTime.now().toIso8601String()}');
+    print('📱 [FLUTTER FCM] Token length: ${token.length}');
+    print(
+      '📱 [FLUTTER FCM] Token preview: ${token.substring(0, min(50, token.length))}...',
+    );
+
     try {
       // Only send token if user is authenticated
-      if (ApiService.token == null || ApiService.token!.isEmpty) {
-        print('ℹ️ FCM token stored for later (user not authenticated yet)');
+      final authToken = ApiService.token;
+      print(
+        '📱 [FLUTTER FCM] Auth token exists: ${authToken != null && authToken.isNotEmpty ? 'YES' : 'NO'}',
+      );
+
+      if (authToken == null || authToken.isEmpty) {
+        print(
+          '⚠️ [FLUTTER FCM] User not authenticated yet - storing token for later',
+        );
         // Store token temporarily to send later after login
         await StorageService.setString('pending_fcm_token', token);
+        print(
+          '💾 [FLUTTER FCM] Token stored in local storage as pending_fcm_token',
+        );
+        print(
+          '📱 ========== [FLUTTER FCM] TOKEN STORED FOR LATER ==========\n',
+        );
         return;
       }
-      
-      final response = await ApiService.post('/users/fcm-token', {'fcmToken': token});
+
+      print('📤 [FLUTTER FCM] Sending token to backend API...');
+      print('📤 [FLUTTER FCM] Endpoint: /users/fcm-token');
+      print('📤 [FLUTTER FCM] Method: POST');
+
+      final response = await ApiService.post('/users/fcm-token', {
+        'fcmToken': token,
+      });
+
+      print('📥 [FLUTTER FCM] Response received');
+      print('📥 [FLUTTER FCM] Response: ${response.toString()}');
+
       if (response['success'] == true) {
-        print('✅ FCM token sent successfully');
+        print('✅ [FLUTTER FCM] SUCCESS: FCM token sent and stored in backend');
+        print(
+          '✅ [FLUTTER FCM] Message: ${response['message'] ?? 'Token updated successfully'}',
+        );
         // Clear pending token if exists
         await StorageService.remove('pending_fcm_token');
+        print('🗑️ [FLUTTER FCM] Cleared pending token from local storage');
       } else {
-        print('⚠️ FCM token update failed: ${response['message']}');
+        print('❌ [FLUTTER FCM] FAILED: Backend returned success: false');
+        print(
+          '❌ [FLUTTER FCM] Error message: ${response['message'] ?? 'Unknown error'}',
+        );
       }
-    } catch (e) {
-      print('❌ Error sending FCM token to backend: $e');
+      print('📱 ========== [FLUTTER FCM] SEND TOKEN COMPLETE ==========\n');
+    } catch (e, stackTrace) {
+      print('❌ ========== [FLUTTER FCM] SEND TOKEN ERROR ==========');
+      print('❌ [FLUTTER FCM] Exception: $e');
+      print('❌ [FLUTTER FCM] Stack trace: $stackTrace');
       // Store token temporarily to send later after login
       await StorageService.setString('pending_fcm_token', token);
+      print('💾 [FLUTTER FCM] Token stored in local storage for retry');
+      print('📱 ========== [FLUTTER FCM] ERROR HANDLED ==========\n');
     }
   }
+
+  static int min(int a, int b) => a < b ? a : b;
 
   /// Send pending FCM token after user login
   static Future<void> sendPendingToken() async {
@@ -177,7 +452,7 @@ class NotificationService {
       if (payload.startsWith('{')) {
         return jsonDecode(payload) as Map<String, dynamic>;
       }
-      
+
       // If it's a string representation of a map, try to parse it
       // Format: {key: value, key2: value2}
       final cleaned = payload.replaceAll(RegExp(r'[{}]'), '');
@@ -197,78 +472,100 @@ class NotificationService {
       return null;
     }
   }
-  
+
   /// Extract notification data from RemoteMessage
   static Map<String, dynamic> extractNotificationData(RemoteMessage message) {
     final data = <String, dynamic>{};
-    
+
     // Extract from data field (FCM data payload)
     data.addAll(message.data);
-    
+
     // Extract reference ID, status, date & time
     if (message.data.containsKey('referenceId')) {
       data['referenceId'] = message.data['referenceId'];
     } else if (message.data.containsKey('ticketNumber')) {
       data['referenceId'] = message.data['ticketNumber'];
     }
-    
+
     if (message.data.containsKey('status')) {
       data['status'] = message.data['status'];
     } else if (message.data.containsKey('newStatus')) {
       data['status'] = message.data['newStatus'];
     }
-    
+
     if (message.data.containsKey('dateTime')) {
       data['dateTime'] = message.data['dateTime'];
     } else if (message.data.containsKey('updatedAt')) {
       data['dateTime'] = message.data['updatedAt'];
     }
-    
+
     if (message.data.containsKey('formattedDate')) {
       data['formattedDate'] = message.data['formattedDate'];
     }
-    
+
     if (message.data.containsKey('formattedTime')) {
       data['formattedTime'] = message.data['formattedTime'];
     }
-    
+
     // Extract ticket/complaint ID for navigation
     if (message.data.containsKey('ticketId')) {
       data['ticketId'] = message.data['ticketId'];
     } else if (message.data.containsKey('complaintId')) {
       data['ticketId'] = message.data['complaintId'];
     }
-    
+
     return data;
   }
 
   /// Handle foreground messages (app is open and visible)
   static Future<void> _handleForegroundMessage(RemoteMessage message) async {
-    print('📨 [FOREGROUND] ========== NOTIFICATION RECEIVED ==========');
-    print('📨 [FOREGROUND] Title: ${message.notification?.title}');
-    print('📨 [FOREGROUND] Body: ${message.notification?.body}');
-    print('📨 [FOREGROUND] Message data: ${jsonEncode(message.data)}');
-    print('📨 [FOREGROUND] Message ID: ${message.messageId}');
-    print('📨 [FOREGROUND] Sent Time: ${message.sentTime}');
+    print('\n📨 ========== [FLUTTER FCM] FOREGROUND NOTIFICATION ==========');
+    print('📨 [FLUTTER FCM] Timestamp: ${DateTime.now().toIso8601String()}');
+    print('📨 [FLUTTER FCM] Message ID: ${message.messageId ?? 'null'}');
+    print('📨 [FLUTTER FCM] Sent Time: ${message.sentTime ?? 'null'}');
+    print('📨 [FLUTTER FCM] From: ${message.from ?? 'null'}');
+    print('📨 [FLUTTER FCM] Collapse Key: ${message.collapseKey ?? 'null'}');
+    print('📨 [FLUTTER FCM] Message Type: ${message.messageType ?? 'null'}');
+    print(
+      '📨 [FLUTTER FCM] Notification Title: ${message.notification?.title ?? 'null'}',
+    );
+    print(
+      '📨 [FLUTTER FCM] Notification Body: ${message.notification?.body ?? 'null'}',
+    );
+    print(
+      '📨 [FLUTTER FCM] Notification Android: ${message.notification?.android != null ? 'present' : 'null'}',
+    );
+    print(
+      '📨 [FLUTTER FCM] Notification Apple: ${message.notification?.apple != null ? 'present' : 'null'}',
+    );
+    print(
+      '📨 [FLUTTER FCM] Data payload keys: ${message.data.keys.join(', ')}',
+    );
+    print('📨 [FLUTTER FCM] Data payload: ${jsonEncode(message.data)}');
+    print('📨 [FLUTTER FCM] Full message: ${message.toString()}');
 
     // Extract notification data
     final notificationData = extractNotificationData(message);
     final notificationType = notificationData['type'] ?? 'general';
-    
+
     print('📨 [FOREGROUND] Notification Type: $notificationType');
     print('📨 [FOREGROUND] Extracted Data: ${jsonEncode(notificationData)}');
-    
+
     // Get title and body with reference ID, status, date & time
-    final title = message.notification?.title ?? _getDefaultTitle(notificationType);
-    String body = message.notification?.body ?? _getDefaultBody(notificationType, notificationData);
-    
+    final title =
+        message.notification?.title ?? _getDefaultTitle(notificationType);
+    String body =
+        message.notification?.body ??
+        _getDefaultBody(notificationType, notificationData);
+
     // Enhance body with reference ID, status, date & time if available
-    if (notificationData.containsKey('referenceId') && 
-        notificationData.containsKey('status') && 
+    if (notificationData.containsKey('referenceId') &&
+        notificationData.containsKey('status') &&
         notificationData.containsKey('dateTime')) {
-      body = 'Reference ID: ${notificationData['referenceId']}\n'
-             'Status: ${notificationData['status']}\n'
-             'Updated: ${notificationData['dateTime']}';
+      body =
+          'Reference ID: ${notificationData['referenceId']}\n'
+          'Status: ${notificationData['status']}\n'
+          'Updated: ${notificationData['dateTime']}';
     }
 
     // Store notification in local storage for notifications screen
@@ -278,7 +575,8 @@ class NotificationService {
     try {
       await _localNotifications
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
+            AndroidFlutterLocalNotificationsPlugin
+          >()
           ?.createNotificationChannel(
             const AndroidNotificationChannel(
               'apartmentsync_notifications',
@@ -325,36 +623,55 @@ class NotificationService {
         ),
         payload: jsonEncode(notificationData), // Store as JSON string
       );
-      
-      print('✅ [FOREGROUND] Local notification displayed successfully');
-      print('✅ [FOREGROUND] Notification ID: ${message.hashCode.abs()}');
-    } catch (e) {
-      print('❌ [FOREGROUND] Error showing notification: $e');
-      print('❌ [FOREGROUND] Error stack: ${StackTrace.current}');
+
+      print(
+        '✅ [FLUTTER FCM] SUCCESS: Local notification displayed successfully',
+      );
+      print('✅ [FLUTTER FCM] Notification ID: ${message.hashCode.abs()}');
+      print('✅ [FLUTTER FCM] Title: "$title"');
+      print('✅ [FLUTTER FCM] Body: "$body"');
+      print('✅ [FLUTTER FCM] Payload: ${jsonEncode(notificationData)}');
+    } catch (e, stackTrace) {
+      print('❌ ========== [FLUTTER FCM] DISPLAY NOTIFICATION ERROR ==========');
+      print('❌ [FLUTTER FCM] Error showing local notification: $e');
+      print('❌ [FLUTTER FCM] Error type: ${e.runtimeType}');
+      print('❌ [FLUTTER FCM] Stack trace: $stackTrace');
+      print('❌ [FLUTTER FCM] Attempted title: "$title"');
+      print('❌ [FLUTTER FCM] Attempted body: "$body"');
+      print('❌ ========== [FLUTTER FCM] DISPLAY ERROR END ==========');
     }
 
     // Also emit to navigator key if available (for in-app display)
     if (navigatorKey.currentContext != null) {
       print('📱 [FOREGROUND] Showing in-app notification');
-      _showInAppNotification(navigatorKey.currentContext!, title, body, notificationData);
+      _showInAppNotification(
+        navigatorKey.currentContext!,
+        title,
+        body,
+        notificationData,
+      );
     } else {
-      print('⚠️ [FOREGROUND] Navigator key not available for in-app notification');
+      print(
+        '⚠️ [FOREGROUND] Navigator key not available for in-app notification',
+      );
     }
-    
-    print('📨 [FOREGROUND] ========== NOTIFICATION HANDLED ==========');
+
+    print(
+      '📨 [FLUTTER FCM] ========== FOREGROUND NOTIFICATION HANDLED ==========\n',
+    );
   }
 
   /// Handle background messages (app is in background)
   static void _handleBackgroundMessage(RemoteMessage message) {
     print('📨 [BACKGROUND] Message received: ${message.notification?.title}');
     print('📨 [BACKGROUND] Message data: ${message.data}');
-    
+
     // Extract notification data
     final notificationData = extractNotificationData(message);
-    
+
     // Store notification data for navigation when app comes to foreground
     _storeNotificationForNavigation(notificationData);
-    
+
     // Navigate if app is already in background and navigator is available
     if (navigatorKey.currentContext != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -365,40 +682,56 @@ class NotificationService {
       });
     }
   }
-  
+
   /// Handle terminated state messages (app was closed)
   static void _handleTerminatedMessage(RemoteMessage message) {
-    print('📨 [TERMINATED] App opened from notification: ${message.notification?.title}');
+    print(
+      '📨 [TERMINATED] App opened from notification: ${message.notification?.title}',
+    );
     print('📨 [TERMINATED] Message data: ${message.data}');
-    
+
     // Extract notification data
     final notificationData = extractNotificationData(message);
-    
+
     // Store notification data for navigation after app initializes
     _storeNotificationForNavigation(notificationData);
   }
-  
+
   /// Store notification data for later navigation (when app initializes)
-  static void _storeNotificationForNavigation(Map<String, dynamic> notificationData) {
+  static void _storeNotificationForNavigation(
+    Map<String, dynamic> notificationData,
+  ) {
     try {
-      StorageService.setString('pending_notification', jsonEncode(notificationData));
+      StorageService.setString(
+        'pending_notification',
+        jsonEncode(notificationData),
+      );
       print('💾 [NOTIFICATION] Stored notification data for navigation');
     } catch (e) {
       print('❌ [NOTIFICATION] Error storing notification data: $e');
     }
   }
-  
+
   /// Check and handle pending notification (call this after app initializes)
   static void handlePendingNotification(BuildContext context) {
     try {
-      final pendingNotificationJson = StorageService.getString('pending_notification');
-      if (pendingNotificationJson != null && pendingNotificationJson.isNotEmpty) {
-        final notificationData = jsonDecode(pendingNotificationJson) as Map<String, dynamic>;
-        print('📱 [NOTIFICATION] Handling pending notification: $notificationData');
-        
+      final pendingNotificationJson = StorageService.getString(
+        'pending_notification',
+      );
+      if (pendingNotificationJson != null &&
+          pendingNotificationJson.isNotEmpty) {
+        final notificationData =
+            jsonDecode(pendingNotificationJson) as Map<String, dynamic>;
+        print(
+          '📱 [NOTIFICATION] Handling pending notification: $notificationData',
+        );
+
         // Navigate to appropriate screen
-        NotificationNavigator.navigateFromNotification(context, notificationData);
-        
+        NotificationNavigator.navigateFromNotification(
+          context,
+          notificationData,
+        );
+
         // Clear pending notification
         StorageService.remove('pending_notification');
       }
@@ -437,56 +770,56 @@ class NotificationService {
     final referenceId = data['referenceId'] ?? data['ticketNumber'] ?? '';
     final status = data['status'] ?? data['newStatus'] ?? '';
     final dateTime = data['dateTime'] ?? '';
-    
+
     switch (type) {
       case 'ticket_created':
-        return referenceId.isNotEmpty 
-          ? 'Reference ID: $referenceId\nStatus: Created\n${dateTime.isNotEmpty ? "Created: $dateTime" : ""}'
-          : 'Your ticket has been created successfully';
+        return referenceId.isNotEmpty
+            ? 'Reference ID: $referenceId\nStatus: Created\n${dateTime.isNotEmpty ? "Created: $dateTime" : ""}'
+            : 'Your ticket has been created successfully';
       case 'ticket_assigned':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\nAssigned to: ${data['assignedTo'] ?? 'staff'}\n${dateTime.isNotEmpty ? "Assigned: $dateTime" : ""}'
-          : 'Ticket assigned to ${data['assignedTo'] ?? 'staff'}';
+            ? 'Reference ID: $referenceId\nAssigned to: ${data['assignedTo'] ?? 'staff'}\n${dateTime.isNotEmpty ? "Assigned: $dateTime" : ""}'
+            : 'Ticket assigned to ${data['assignedTo'] ?? 'staff'}';
       case 'ticket_status_updated':
         return referenceId.isNotEmpty && status.isNotEmpty
-          ? 'Reference ID: $referenceId\nStatus: $status\n${dateTime.isNotEmpty ? "Updated: $dateTime" : ""}'
-          : 'Ticket status changed to ${status.isNotEmpty ? status : data['newStatus'] ?? ''}';
+            ? 'Reference ID: $referenceId\nStatus: $status\n${dateTime.isNotEmpty ? "Updated: $dateTime" : ""}'
+            : 'Ticket status changed to ${status.isNotEmpty ? status : data['newStatus'] ?? ''}';
       case 'ticket_comment_added':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\n${data['postedBy'] ?? 'Someone'} commented\n${dateTime.isNotEmpty ? "Posted: $dateTime" : ""}'
-          : '${data['postedBy'] ?? 'Someone'} commented on ticket';
+            ? 'Reference ID: $referenceId\n${data['postedBy'] ?? 'Someone'} commented\n${dateTime.isNotEmpty ? "Posted: $dateTime" : ""}'
+            : '${data['postedBy'] ?? 'Someone'} commented on ticket';
       case 'work_update_added':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\nProgress update available\n${dateTime.isNotEmpty ? "Updated: $dateTime" : ""}'
-          : 'Progress update on ticket';
+            ? 'Reference ID: $referenceId\nProgress update available\n${dateTime.isNotEmpty ? "Updated: $dateTime" : ""}'
+            : 'Progress update on ticket';
       case 'ticket_resolved':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\nStatus: Resolved\n${dateTime.isNotEmpty ? "Resolved: $dateTime" : ""}\nPlease verify and close.'
-          : 'Ticket has been resolved. Please verify and close.';
+            ? 'Reference ID: $referenceId\nStatus: Resolved\n${dateTime.isNotEmpty ? "Resolved: $dateTime" : ""}\nPlease verify and close.'
+            : 'Ticket has been resolved. Please verify and close.';
       case 'ticket_closed':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\nStatus: Closed\n${dateTime.isNotEmpty ? "Closed: $dateTime" : ""}'
-          : 'Ticket has been closed';
+            ? 'Reference ID: $referenceId\nStatus: Closed\n${dateTime.isNotEmpty ? "Closed: $dateTime" : ""}'
+            : 'Ticket has been closed';
       case 'ticket_reopened':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\nStatus: Reopened\n${dateTime.isNotEmpty ? "Reopened: $dateTime" : ""}'
-          : 'Ticket has been reopened';
+            ? 'Reference ID: $referenceId\nStatus: Reopened\n${dateTime.isNotEmpty ? "Reopened: $dateTime" : ""}'
+            : 'Ticket has been reopened';
       case 'ticket_cancelled':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\nStatus: Cancelled\n${dateTime.isNotEmpty ? "Cancelled: $dateTime" : ""}'
-          : 'Ticket has been cancelled';
+            ? 'Reference ID: $referenceId\nStatus: Cancelled\n${dateTime.isNotEmpty ? "Cancelled: $dateTime" : ""}'
+            : 'Ticket has been cancelled';
       case 'user_approved':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\nStatus: Approved\n${dateTime.isNotEmpty ? "Approved: $dateTime" : ""}'
-          : 'Your account has been approved';
+            ? 'Reference ID: $referenceId\nStatus: Approved\n${dateTime.isNotEmpty ? "Approved: $dateTime" : ""}'
+            : 'Your account has been approved';
       case 'user_rejected':
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\nStatus: Rejected\nReason: ${data['reason'] ?? 'No reason provided'}\n${dateTime.isNotEmpty ? "Rejected: $dateTime" : ""}'
-          : 'Your account registration has been rejected';
+            ? 'Reference ID: $referenceId\nStatus: Rejected\nReason: ${data['reason'] ?? 'No reason provided'}\n${dateTime.isNotEmpty ? "Rejected: $dateTime" : ""}'
+            : 'Your account registration has been rejected';
       default:
         return referenceId.isNotEmpty
-          ? 'Reference ID: $referenceId\n${dateTime.isNotEmpty ? "Updated: $dateTime" : ""}'
-          : 'You have a new notification';
+            ? 'Reference ID: $referenceId\n${dateTime.isNotEmpty ? "Updated: $dateTime" : ""}'
+            : 'You have a new notification';
     }
   }
 
@@ -529,9 +862,11 @@ class NotificationService {
       };
 
       // Get existing notifications
-      final notificationsJson = StorageService.getString('stored_notifications');
+      final notificationsJson = StorageService.getString(
+        'stored_notifications',
+      );
       List<Map<String, dynamic>> notifications = [];
-      
+
       if (notificationsJson != null && notificationsJson.isNotEmpty) {
         try {
           final decoded = jsonDecode(notificationsJson) as List;
@@ -550,7 +885,10 @@ class NotificationService {
       }
 
       // Save back to storage
-      await StorageService.setString('stored_notifications', jsonEncode(notifications));
+      await StorageService.setString(
+        'stored_notifications',
+        jsonEncode(notifications),
+      );
       print('✅ [NOTIFICATION] Stored notification: ${notification['id']}');
     } catch (e) {
       print('❌ [NOTIFICATION] Error storing notification: $e');
@@ -566,7 +904,7 @@ class NotificationService {
   ) {
     try {
       final scaffoldMessenger = ScaffoldMessenger.of(context);
-      
+
       // Dismiss any existing snackbar
       scaffoldMessenger.clearSnackBars();
 
@@ -600,16 +938,15 @@ class NotificationService {
               const SizedBox(height: 4),
               Text(
                 body,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.white70,
-                ),
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
-          backgroundColor: _getNotificationColor(notificationData['type'] ?? 'general') ?? Colors.blue,
+          backgroundColor:
+              _getNotificationColor(notificationData['type'] ?? 'general') ??
+              Colors.blue,
           duration: const Duration(seconds: 5),
           behavior: SnackBarBehavior.floating,
           action: SnackBarAction(
@@ -617,15 +954,20 @@ class NotificationService {
             textColor: Colors.white,
             onPressed: () {
               // Navigate to appropriate screen
-              final ticketId = notificationData['ticketId'] ?? notificationData['complaintId'];
+              final ticketId =
+                  notificationData['ticketId'] ??
+                  notificationData['complaintId'];
               if (ticketId != null) {
-                NotificationNavigator.navigateFromNotification(context, notificationData);
+                NotificationNavigator.navigateFromNotification(
+                  context,
+                  notificationData,
+                );
               }
             },
           ),
         ),
       );
-      
+
       print('✅ [NOTIFICATION] In-app notification displayed');
     } catch (e) {
       print('❌ [NOTIFICATION] Error showing in-app notification: $e');
@@ -661,7 +1003,9 @@ class NotificationService {
   /// Get all stored notifications
   static List<Map<String, dynamic>> getStoredNotifications() {
     try {
-      final notificationsJson = StorageService.getString('stored_notifications');
+      final notificationsJson = StorageService.getString(
+        'stored_notifications',
+      );
       if (notificationsJson != null && notificationsJson.isNotEmpty) {
         final decoded = jsonDecode(notificationsJson) as List;
         return decoded.cast<Map<String, dynamic>>();
@@ -679,7 +1023,10 @@ class NotificationService {
       final index = notifications.indexWhere((n) => n['id'] == notificationId);
       if (index != -1) {
         notifications[index]['read'] = true;
-        await StorageService.setString('stored_notifications', jsonEncode(notifications));
+        await StorageService.setString(
+          'stored_notifications',
+          jsonEncode(notifications),
+        );
         print('✅ [NOTIFICATION] Marked notification as read: $notificationId');
       }
     } catch (e) {
@@ -728,33 +1075,35 @@ class NotificationService {
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print('📨 [BACKGROUND HANDLER] Message received: ${message.notification?.title}');
+  print(
+    '📨 [BACKGROUND HANDLER] Message received: ${message.notification?.title}',
+  );
   print('📨 [BACKGROUND HANDLER] Body: ${message.notification?.body}');
   print('📨 [BACKGROUND HANDLER] Message data: ${message.data}');
-  
+
   // Initialize local notifications for background handler
   const AndroidInitializationSettings androidSettings =
       AndroidInitializationSettings('@mipmap/ic_launcher');
-  final DarwinInitializationSettings iosSettings =
-      DarwinInitializationSettings(
-        requestAlertPermission: true,
-        requestBadgePermission: true,
-        requestSoundPermission: true,
-      );
+  final DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
+    requestAlertPermission: true,
+    requestBadgePermission: true,
+    requestSoundPermission: true,
+  );
   final InitializationSettings initSettings = InitializationSettings(
     android: androidSettings,
     iOS: iosSettings,
   );
-  
+
   final FlutterLocalNotificationsPlugin localNotifications =
       FlutterLocalNotificationsPlugin();
   await localNotifications.initialize(initSettings);
-  
+
   // Create notification channel for Android (if not already created)
   try {
     await localNotifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(
           const AndroidNotificationChannel(
             'apartmentsync_notifications',
@@ -770,11 +1119,11 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   } catch (e) {
     print('⚠️ [BACKGROUND HANDLER] Error creating notification channel: $e');
   }
-  
+
   // Extract notification data
   final notificationData = <String, dynamic>{};
   notificationData.addAll(message.data);
-  
+
   // Store notification for navigation when app opens
   try {
     final prefs = await SharedPreferences.getInstance();
@@ -783,7 +1132,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   } catch (e) {
     print('❌ [BACKGROUND HANDLER] Error storing notification: $e');
   }
-  
+
   // Note: If message has notification payload, Firebase automatically displays it
   // This handler is primarily for data-only messages or additional processing
 }

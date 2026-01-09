@@ -7,6 +7,8 @@ import '../screens/admin/settings_screen.dart';
 import '../screens/staff/visitor_checkin_screen.dart';
 import '../screens/complaints/complaints_screen.dart';
 import '../screens/notices/notices_screen.dart';
+import '../screens/visitors/visitor_dashboard_screen.dart';
+import '../screens/visitors/visitors_log_screen.dart';
 import 'dart:convert';
 
 /// Drawer item model
@@ -47,6 +49,7 @@ class AppSidebar extends StatelessWidget {
   final List<DrawerSection> sections;
   final VoidCallback? onLogout;
   final Color? headerBackgroundColor;
+  final Widget? buildingSelector;
 
   const AppSidebar({
     super.key,
@@ -57,6 +60,7 @@ class AppSidebar extends StatelessWidget {
     required this.sections,
     this.onLogout,
     this.headerBackgroundColor,
+    this.buildingSelector,
   });
 
   /// Build drawer header with consistent styling
@@ -211,6 +215,10 @@ class AppSidebar extends StatelessWidget {
           padding: EdgeInsets.zero,
           children: [
             _buildHeader(),
+            if (buildingSelector != null) ...[
+              buildingSelector!,
+              const Divider(height: 1),
+            ],
             ...sections.expand((section) => [
                   _buildSection(section),
                   if (section != sections.last) const Divider(height: 1),
@@ -246,11 +254,118 @@ class AppSidebarBuilder {
       }
     }
 
+    // Build building selector widget
+    Widget? buildingSelectorWidget;
+    if (buildings != null && buildings.isNotEmpty) {
+      // Ensure selectedBuildingCode is valid
+      final validSelectedCode = selectedBuildingCode != null &&
+          buildings.any((b) => b['code'] == selectedBuildingCode)
+          ? selectedBuildingCode
+          : buildings.first['code'] as String?;
+      
+      buildingSelectorWidget = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        color: AppColors.surface,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.apartment,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Select Building (${buildings.length})',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textSecondary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.border,
+                  width: 1,
+                ),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: validSelectedCode,
+                  isExpanded: true,
+                  icon: const Icon(Icons.arrow_drop_down, color: AppColors.primary),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  items: buildings.map((building) {
+                    final code = building['code'] as String? ?? '';
+                    final name = building['name'] as String? ?? 'Unknown';
+                    final isSelected = code == validSelectedCode;
+                    return DropdownMenuItem<String>(
+                      value: code,
+                      child: Row(
+                        children: [
+                          Icon(
+                            isSelected ? Icons.check_circle : Icons.circle_outlined,
+                            size: 18,
+                            color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  name,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  code,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (String? newCode) {
+                    if (newCode != null && onBuildingSelected != null) {
+                      Navigator.pop(context); // Close drawer
+                      onBuildingSelected(newCode);
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return AppSidebar(
       userName: userName ?? 'Admin',
       userEmail: userEmail,
       subtitle: buildingName,
       headerIcon: Icons.admin_panel_settings,
+      buildingSelector: buildingSelectorWidget,
       sections: [
         DrawerSection(
           title: 'Management',
@@ -264,6 +379,19 @@ class AppSidebarBuilder {
                   context,
                   MaterialPageRoute(
                     builder: (_) => const BulkResidentManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            DrawerItem(
+              icon: Icons.person_add,
+              title: 'Visitor Management',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const VisitorDashboardScreen(),
                   ),
                 );
               },
@@ -517,6 +645,19 @@ class AppSidebarBuilder {
                   context,
                   MaterialPageRoute(
                     builder: (_) => const ComplaintsScreen(),
+                  ),
+                );
+              },
+            ),
+            DrawerItem(
+              icon: Icons.people,
+              title: 'My Visitors',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const VisitorsLogScreen(),
                   ),
                 );
               },

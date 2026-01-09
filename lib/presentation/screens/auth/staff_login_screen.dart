@@ -1,4 +1,5 @@
 import '../../../core/imports/app_imports.dart';
+import 'forgot_password_screen.dart';
 import '../../../data/models/user_data.dart';
 import 'dart:convert';
 import '../staff/staff_dashboard_screen.dart';
@@ -26,21 +27,14 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
   bool _isOTPLogin = false;
 
   Future<void> _sendOTPForLogin() async {
-    final identifier = _identifierController.text.trim();
-    final isPhone = RegExp(r'^[6-9]\d{9}$').hasMatch(identifier);
+    final email = _identifierController.text.trim();
 
-    if (!isPhone && !identifier.contains('@')) {
+    // Validate email format
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(email)) {
       AppMessageHandler.showError(
         context,
-        'Please enter a valid phone number or email',
-      );
-      return;
-    }
-
-    if (isPhone && identifier.length != 10) {
-      AppMessageHandler.showError(
-        context,
-        'Please enter a valid 10-digit phone number',
+        'Please enter a valid email address',
       );
       return;
     }
@@ -49,8 +43,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
     try {
       final response = await ApiService.post(ApiConstants.sendOTP, {
-        'phoneNumber': isPhone ? identifier : null,
-        'email': !isPhone ? identifier : null,
+        'email': email,
         'purpose': 'login',
       });
 
@@ -59,18 +52,16 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
           context,
           response,
           onSuccess: () {
-            if (isPhone) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => OTPVerificationScreen(
-                    phoneNumber: identifier,
-                    purpose: 'login',
-                    roleContext: widget.roleContext,
-                  ),
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OTPVerificationScreen(
+                  email: email,
+                  purpose: 'login',
+                  roleContext: widget.roleContext,
                 ),
-              );
-            }
+              ),
+            );
           },
         );
       }
@@ -256,26 +247,25 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             const SizedBox(height: 20),
-                            // Email or Phone Number
+                            // Email
                             TextFormField(
                               controller: _identifierController,
                               keyboardType: TextInputType.emailAddress,
                               decoration: InputDecoration(
-                                labelText: 'Email or Phone Number',
-                                hintText: 'Enter email or phone number',
-                                prefixIcon: const Icon(Icons.person),
+                                labelText: 'Email',
+                                hintText: 'Enter your email address',
+                                prefixIcon: const Icon(Icons.email),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
                               validator: (value) {
                                 if (value == null || value.isEmpty) {
-                                  return 'Please enter your email or phone number';
+                                  return 'Please enter your email address';
                                 }
-                                final isPhone = RegExp(r'^[6-9]\d{9}$').hasMatch(value);
-                                final isEmail = value.contains('@') && value.contains('.');
-                                if (!isPhone && !isEmail) {
-                                  return 'Please enter a valid email or phone number';
+                                final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                                if (!emailRegex.hasMatch(value)) {
+                                  return 'Please enter a valid email address';
                                 }
                                 return null;
                               },
@@ -333,7 +323,12 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                 if (!_isOTPLogin)
                                   TextButton(
                                     onPressed: () {
-                                      // TODO: Implement forgot password
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const ForgotPasswordScreen(),
+                                        ),
+                                      );
                                     },
                                     child: const Text(
                                       'Forgot Password?',

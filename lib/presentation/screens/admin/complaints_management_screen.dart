@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import '../complaints/complaint_detail_screen.dart';
 import 'admin_complaint_detail_screen.dart';
 import '../../widgets/app_sidebar.dart';
-import '../../widgets/contextual_app_bar.dart';
 
 class ComplaintsManagementScreen extends StatefulWidget {
   const ComplaintsManagementScreen({super.key});
@@ -74,10 +73,25 @@ class ComplaintsManagementScreenState
           _allBuildings = List<Map<String, dynamic>>.from(
             response['data']?['buildings'] ?? [],
           );
-          if (_allBuildings.isNotEmpty && _selectedBuildingCode == null) {
-            _selectedBuildingCode =
-                StorageService.getString(AppConstants.selectedBuildingKey) ??
-                _allBuildings.first['code'];
+          
+          // Validate stored building code against fetched buildings
+          if (_allBuildings.isNotEmpty) {
+            final storedCode = StorageService.getString(AppConstants.selectedBuildingKey);
+            
+            // Check if stored code exists in the fetched buildings
+            final isValidCode = storedCode != null && 
+                _allBuildings.any((b) => b['code'] == storedCode);
+            
+            if (isValidCode) {
+              _selectedBuildingCode = storedCode;
+            } else {
+              // Use first building and update storage
+              _selectedBuildingCode = _allBuildings.first['code'];
+              StorageService.setString(
+                AppConstants.selectedBuildingKey,
+                _selectedBuildingCode!,
+              );
+            }
           }
         });
       }
@@ -1437,12 +1451,14 @@ class _PremiumComplaintCard extends StatelessWidget {
                                   backgroundImage: profilePicUrl != null
                                       ? NetworkImage(profilePicUrl)
                                       : null,
-                                  onBackgroundImageError: (exception, stackTrace) {
-                                    // Image failed to load, will show child instead
-                                    print(
-                                      '❌ [FLUTTER] Failed to load profile picture: $exception',
-                                    );
-                                  },
+                                  onBackgroundImageError: profilePicUrl != null
+                                      ? (exception, stackTrace) {
+                                          // Image failed to load, will show child instead
+                                          print(
+                                            '❌ [FLUTTER] Failed to load profile picture: $exception',
+                                          );
+                                        }
+                                      : null,
                                   child: profilePicUrl == null
                                       ? Text(
                                           (createdBy['fullName'] ?? 'U')[0]

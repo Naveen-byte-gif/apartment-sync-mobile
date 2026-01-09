@@ -1,4 +1,5 @@
 import '../../../core/imports/app_imports.dart';
+import 'forgot_password_screen.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../data/models/user_data.dart';
 import 'dart:convert';
@@ -18,7 +19,7 @@ class AdminLoginScreen extends StatefulWidget {
 }
 
 class _AdminLoginScreenState extends State<AdminLoginScreen> {
-  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isPasswordVisible = false;
@@ -33,7 +34,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
       final response = await ApiService.post(
         ApiConstants.adminLogin,
         {
-          'phoneNumber': _phoneController.text.trim(),
+          'email': _emailController.text.trim(),
           'password': _passwordController.text,
         },
       );
@@ -188,23 +189,24 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           const SizedBox(height: 20),
-                          // Phone Number
+                          // Email
                           TextFormField(
-                            controller: _phoneController,
-                            keyboardType: TextInputType.phone,
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
                             decoration: InputDecoration(
-                              labelText: 'Phone Number',
-                              prefixIcon: const Icon(Icons.phone),
+                              labelText: 'Email',
+                              prefixIcon: const Icon(Icons.email),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
                             ),
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Please enter your phone number';
+                                return 'Please enter your email address';
                               }
-                              if (value.length != 10) {
-                                return 'Please enter a valid 10-digit phone number';
+                              final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                              if (!emailRegex.hasMatch(value)) {
+                                return 'Please enter a valid email address';
                               }
                               return null;
                             },
@@ -246,7 +248,12 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             alignment: Alignment.centerRight,
                             child: TextButton(
                               onPressed: () {
-                                // TODO: Implement forgot password
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const ForgotPasswordScreen(),
+                                  ),
+                                );
                               },
                               child: const Text(
                                 'Forgot Password?',

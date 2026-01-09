@@ -2,6 +2,7 @@ import '../../../core/imports/app_imports.dart';
 import '../auth/role_selection_screen.dart';
 import '../home/tabs/news_tab_screen.dart';
 import '../profile/profile_screen.dart';
+import '../chat/chat_home_screen.dart';
 import 'visitor_checkin_screen.dart';
 import '../../widgets/app_sidebar.dart';
 
@@ -64,6 +65,8 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       case 1:
         return const NewsTabScreen();
       case 2:
+        return const ChatHomeScreen();
+      case 3:
         return const ProfileScreen();
       default:
         return _isLoading
@@ -241,6 +244,10 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.article_outlined),
             label: 'News',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_bubble_outline),
+            label: 'Chat',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),

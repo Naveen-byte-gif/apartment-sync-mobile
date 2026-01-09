@@ -1,12 +1,12 @@
 class ApiConstants {
   // Base URL - Update this with your backend URL
-  static const String baseUrl = 'http://192.168.0.113:6500/api';
+  static const String baseUrl = 'http://192.168.1.15:6500/api';
 
   // ------------- AWS URL--------------
   // static const String baseUrl = 'http://13.60.226.11:6500/api';
   // static const String baseUrl = 'https://apartment-sync-backend.onrender.com/api';
   // Socket.IO
-  static const String socketUrl = 'http://192.168.0.113:6500';
+  static const String socketUrl = 'http://192.168.1.15:6500';
 
   // ------------- AWS URL--------------
   // static const String socketUrl = 'http://13.60.226.11:6500';
@@ -16,6 +16,7 @@ class ApiConstants {
   static const String sendOTP = '/auth/send-otp';
   static const String verifyOTPRegister = '/auth/verify-otp-register';
   static const String verifyOTPLogin = '/auth/verify-otp-login';
+  static const String verifyOTPResetPassword = '/auth/verify-otp-reset-password';
   static const String passwordLogin = '/auth/password-login';
   static const String adminLogin = '/auth/admin/login';
   static const String adminRegister = '/auth/admin/register';
@@ -75,6 +76,15 @@ class ApiConstants {
 
   // Visitor Endpoints
   static const String visitors = '/visitors';
+  static const String visitorsDashboardStats = '/visitors/dashboard/stats';
+  static const String visitorsOverdue = '/visitors/overdue';
+  static String visitorById(String id) => '/visitors/$id';
+  static String visitorCheckIn(String id) => '/visitors/$id/check-in';
+  static String visitorCheckOut(String id) => '/visitors/$id/check-out';
+  static String visitorStatus(String id) => '/visitors/$id/status';
+  static String visitorExactTime(String id) => '/visitors/$id/exact-time';
+  static String visitorGenerateQR(String id) => '/visitors/$id/generate-qr';
+  static String visitorGenerateOTP(String id) => '/visitors/$id/generate-otp';
 
   // Helper method to change flat status endpoint
   static String changeFlatStatus(
@@ -107,13 +117,30 @@ class ApiConstants {
   static const String adminStaffOnboard = '/admin/staff/onboard';
   static String adminStaffVerifyIdentity(String staffId) =>
       '/admin/staff/$staffId/verify-identity';
-  static const String visitorsOverdue = '/visitors/overdue';
-  static String visitorById(String id) => '/visitors/$id';
-  static String visitorCheckIn(String id) => '/visitors/$id/check-in';
-  static String visitorCheckOut(String id) => '/visitors/$id/check-out';
-  static String visitorGenerateQR(String id) => '/visitors/$id/generate-qr';
-  static String visitorGenerateOTP(String id) => '/visitors/$id/generate-otp';
 
+  // Chat Endpoints
+  // Community Chat
+  static const String communityChat = '/chats/community';
+  static const String sendCommunityMessage = '/chats/community/message';
+  static String pinCommunityMessage(String messageId) =>
+      '/chats/community/message/$messageId/pin';
+  static String addMessageReaction(String messageId) =>
+      '/chats/community/message/$messageId/reaction';
+
+  // P2P Chat
+  static const String chatableUsers = '/chats/chatable-users';
+  static const String p2pChats = '/chats/p2p';
+  static String p2pChat(String receiverId) => '/chats/p2p/$receiverId';
+  static const String sendP2PMessage = '/chats/p2p/message';
+  static String markP2PAsRead(String chatId) => '/chats/p2p/$chatId/read';
+
+  // Complaint Chat
+  static String complaintChat(String complaintId) =>
+      '/chats/complaint/$complaintId';
+  static const String sendComplaintMessage = '/chats/complaint/message';
+
+  // Utils
+  static const String uploadChatImage = '/chats/upload-image';
 
   // Headers
   static Map<String, String> getHeaders(String? token) {

@@ -9,12 +9,14 @@ import 'building_details_screen.dart';
 import 'building_view_3d_screen.dart';
 import 'bulk_resident_management_screen.dart';
 import 'users_management_screen.dart';
-import 'complaints_management_screen.dart' show ComplaintsManagementScreen, ComplaintsManagementScreenState;
+import 'complaints_management_screen.dart'
+    show ComplaintsManagementScreen, ComplaintsManagementScreenState;
 import 'settings_screen.dart';
+import 'no_building_screen.dart';
 import '../home/tabs/news_tab_screen.dart';
 import '../profile/profile_screen.dart';
-import '../../widgets/premium_bottom_nav.dart';
-import '../../widgets/contextual_app_bar.dart';
+import '../chat/chat_home_screen.dart';
+import '../../widgets/admin_bottom_nav.dart';
 import '../../widgets/app_sidebar.dart';
 import 'dart:convert';
 
@@ -32,7 +34,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<Map<String, dynamic>> _allBuildings = [];
   String? _selectedBuildingCode;
   bool _isLoading = true;
-  final GlobalKey<State<ComplaintsManagementScreen>> _complaintsKey = GlobalKey();
+  final GlobalKey<State<ComplaintsManagementScreen>> _complaintsKey =
+      GlobalKey();
 
   @override
   void initState() {
@@ -43,7 +46,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   void _loadSelectedBuilding() {
-    final savedCode = StorageService.getString(AppConstants.selectedBuildingKey);
+    final savedCode = StorageService.getString(
+      AppConstants.selectedBuildingKey,
+    );
     setState(() {
       _selectedBuildingCode = savedCode;
     });
@@ -65,11 +70,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final response = await ApiService.get(ApiConstants.adminBuildings);
       if (response['success'] == true) {
         setState(() {
-          _allBuildings = List<Map<String, dynamic>>.from(response['data']?['buildings'] ?? []);
-          // If no building selected and buildings exist, select first one
-          if (_selectedBuildingCode == null && _allBuildings.isNotEmpty) {
-            _selectedBuildingCode = _allBuildings.first['code'];
-            _saveSelectedBuilding(_selectedBuildingCode);
+          _allBuildings = List<Map<String, dynamic>>.from(
+            response['data']?['buildings'] ?? [],
+          );
+          
+          // Validate stored building code against fetched buildings
+          if (_allBuildings.isNotEmpty) {
+            // Check if current selected building code exists in fetched buildings
+            final isValidCode = _selectedBuildingCode != null && 
+                _allBuildings.any((b) => b['code'] == _selectedBuildingCode);
+            
+            if (!isValidCode) {
+              // Stored code is invalid or doesn't exist, use first building
+              _selectedBuildingCode = _allBuildings.first['code'];
+              _saveSelectedBuilding(_selectedBuildingCode);
+            }
+          } else if (_selectedBuildingCode != null) {
+            // No buildings but we have a stored code - clear it
+            _saveSelectedBuilding(null);
           }
         });
         // Load dashboard data after buildings are loaded
@@ -138,19 +156,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         print('📊 [FLUTTER] Loading dashboard stats...');
         String dashboardUrl = ApiConstants.adminDashboard;
         if (_selectedBuildingCode != null) {
-          dashboardUrl = ApiConstants.addBuildingCode(dashboardUrl, _selectedBuildingCode);
+          dashboardUrl = ApiConstants.addBuildingCode(
+            dashboardUrl,
+            _selectedBuildingCode,
+          );
         }
         final dashboardResponse = await ApiService.get(dashboardUrl);
         print('✅ [FLUTTER] Dashboard response received');
-        print('📦 [FLUTTER] Dashboard Response: ${dashboardResponse.toString()}');
-        
+        print(
+          '📦 [FLUTTER] Dashboard Response: ${dashboardResponse.toString()}',
+        );
+
         if (dashboardResponse['success'] == true) {
           print('📊 [FLUTTER] Dashboard data loaded successfully');
           setState(() {
             _dashboardData = dashboardResponse['data']?['dashboard'];
             // Update buildings list if provided
             if (dashboardResponse['data']?['buildings'] != null) {
-              _allBuildings = List<Map<String, dynamic>>.from(dashboardResponse['data']?['buildings'] ?? []);
+              _allBuildings = List<Map<String, dynamic>>.from(
+                dashboardResponse['data']?['buildings'] ?? [],
+              );
             }
           });
         }
@@ -163,12 +188,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         print('🏢 [FLUTTER] Loading building details...');
         String buildingUrl = ApiConstants.adminBuildingDetails;
         if (_selectedBuildingCode != null) {
-          buildingUrl = ApiConstants.addBuildingCode(buildingUrl, _selectedBuildingCode);
+          buildingUrl = ApiConstants.addBuildingCode(
+            buildingUrl,
+            _selectedBuildingCode,
+          );
         }
         final buildingResponse = await ApiService.get(buildingUrl);
         print('✅ [FLUTTER] Building details response received');
         print('📦 [FLUTTER] Building Response: ${buildingResponse.toString()}');
-        
+
         if (buildingResponse['success'] == true) {
           print('🏢 [FLUTTER] Building data loaded successfully');
           setState(() {
@@ -186,207 +214,71 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _getBodyForIndex(int index) {
-    Widget body;
-    switch (index) {
-      case 0: // Dashboard
-        body = _isLoading
+    // Use IndexedStack to preserve state of each tab page
+    return IndexedStack(
+      index: index,
+      children: [
+        // Dashboard (index 0)
+        _isLoading
             ? const Center(child: CircularProgressIndicator())
-            : _buildDashboard();
-        break;
-      case 1: // Users
-        body = const UsersManagementScreen();
-        break;
-      case 2: // News
-        body = const NewsTabScreen();
-        break;
-      case 3: // Profile
-        body = const ProfileScreen();
-        break;
-      default:
-        body = _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _buildDashboard();
-    }
-
-    // Add fade transition with proper constraints
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      transitionBuilder: (Widget child, Animation<double> animation) {
-        return FadeTransition(
-          opacity: animation,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0.1, 0),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOut,
-            )),
-            child: child,
-          ),
-        );
-      },
-      child: Container(
-        key: ValueKey<int>(index),
-        constraints: const BoxConstraints.expand(),
-        child: body,
-      ),
+            : _buildDashboard(),
+        // Users (index 1)
+        const UsersManagementScreen(),
+        // News (index 2)
+        const NewsTabScreen(),
+        // Chat (index 3)
+        const ChatHomeScreen(),
+        // Profile (index 4)
+        const ProfileScreen(),
+      ],
     );
   }
 
-  PreferredSizeWidget _buildAppBar() {
-    final buildingName = _selectedBuildingCode != null && _allBuildings.isNotEmpty
-        ? _allBuildings.firstWhere(
-            (b) => b['code'] == _selectedBuildingCode,
-            orElse: () => {'name': 'Select Building'},
-          )['name'] ?? 'Select Building'
-        : null;
+ 
 
+  String _getAppBarTitle() {
     switch (_currentIndex) {
-      case 0: // Dashboard
-        return ContextualAppBar(
-          type: AppBarType.dashboard,
-          title: 'Admin Dashboard',
-          subtitle: buildingName,
-          leading: Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () => Scaffold.of(context).openDrawer(),
-            ),
-          ),
-          customActions: [
-            if (_allBuildings.isNotEmpty)
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.apartment),
-                tooltip: 'Select Building',
-                onSelected: (String code) {
-                  if (code == 'add_new') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const CreateApartmentFlowScreen(),
-                      ),
-                    ).then((_) => _loadDashboardData());
-                  } else {
-                    _saveSelectedBuilding(code);
-                    _loadDashboardData();
-                  }
-                },
-                itemBuilder: (BuildContext context) {
-                  return [
-                    ..._allBuildings.map((building) {
-                      final isSelected = building['code'] == _selectedBuildingCode;
-                      return PopupMenuItem<String>(
-                        value: building['code'],
-                        child: Row(
-                          children: [
-                            if (isSelected)
-                              const Icon(Icons.check, color: AppColors.primary, size: 20)
-                            else
-                              const SizedBox(width: 20),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    building['name'] ?? 'Unknown',
-                                    style: TextStyle(
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                    ),
-                                  ),
-                                  Text(
-                                    building['code'] ?? '',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem<String>(
-                      value: 'add_new',
-                      child: Row(
-                        children: [
-                          Icon(Icons.add, color: AppColors.primary),
-                          SizedBox(width: 8),
-                          Text('Add New Building'),
-                        ],
-                      ),
-                    ),
-                  ];
-                },
-              ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: () async {
-                print('🖱️ [FLUTTER] Logout button clicked');
-                await StorageService.remove(AppConstants.tokenKey);
-                await StorageService.remove(AppConstants.userKey);
-                ApiService.setToken(null);
-                print('✅ [FLUTTER] Logged out successfully');
-                if (mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
-                    (route) => false,
-                  );
-                }
-              },
-            ),
-          ],
-        );
-
-      case 1: // Users
-        return ContextualAppBar(
-          type: AppBarType.users,
-          title: 'Users Management',
-        );
-
-      case 2: // News
-        return ContextualAppBar(
-          type: AppBarType.news,
-          title: 'News',
-          onSearch: () {
-            // Search action
-          },
-        );
-
-      case 3: // Profile
-        return ContextualAppBar(
-          type: AppBarType.profile,
-          title: 'Profile',
-          onEdit: () {
-            // Edit profile action
-          },
-        );
-
+      case 0:
+        return 'Dashboard';
+      case 1:
+        return 'Users';
+      case 2:
+        return 'News';
+      case 3:
+        return 'Chat';
+      case 4:
+        return 'Profile';
       default:
-        return ContextualAppBar(
-          type: AppBarType.dashboard,
-          title: 'Admin Dashboard',
-        );
+        return 'Dashboard';
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
     // Get building name for sidebar
-    final buildingName = _selectedBuildingCode != null && _allBuildings.isNotEmpty
+    final buildingName =
+        _selectedBuildingCode != null && _allBuildings.isNotEmpty
         ? _allBuildings.firstWhere(
-            (b) => b['code'] == _selectedBuildingCode,
-            orElse: () => {'name': ''},
-          )['name'] ?? ''
+                (b) => b['code'] == _selectedBuildingCode,
+                orElse: () => {'name': ''},
+              )['name'] ??
+              ''
         : null;
 
     return Scaffold(
-      appBar: _buildAppBar(),
+      appBar: AppBar(
+        title: Text(
+          _getAppBarTitle(),
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          if (_currentIndex == 0)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadDashboardData,
+            ),
+        ],
+      ),
       drawer: AppSidebarBuilder.buildAdminSidebar(
         context: context,
         buildingName: buildingName,
@@ -395,25 +287,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         onBuildingSelected: (code) {
           _saveSelectedBuilding(code);
           _loadDashboardData();
+          // Force rebuild of all tabs to refresh data
+          setState(() {});
         },
       ),
-      body: SafeArea(
-        child: _getBodyForIndex(_currentIndex),
-      ),
-      bottomNavigationBar: PremiumBottomNav(
+      body: SafeArea(child: _getBodyForIndex(_currentIndex)),
+      bottomNavigationBar: AdminBottomNav(
         currentIndex: _currentIndex,
         onTap: (index) {
-          print('🖱️ [FLUTTER] Admin tab changed to index: $index');
-          setState(() {
-            _currentIndex = index;
-          });
+          if (mounted) {
+            setState(() {
+              _currentIndex = index;
+            });
+          }
         },
-        items: const [
-          NavItem(icon: Icons.dashboard, label: 'Dashboard'),
-          NavItem(icon: Icons.people, label: 'Users'),
-          NavItem(icon: Icons.article_outlined, label: 'News'),
-          NavItem(icon: Icons.person, label: 'Profile'),
-        ],
       ),
     );
   }
@@ -421,57 +308,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildDashboard() {
     // Check if building is created
     if (_buildingData == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.apartment,
-                size: 80,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'No Building Created',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Create your building to get started',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateApartmentFlowScreen(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('Create Building'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.textOnPrimary,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      return const NoBuildingScreen();
     }
 
     return SingleChildScrollView(
@@ -496,7 +333,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       color: AppColors.primary,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.apartment, color: AppColors.textOnPrimary, size: 28),
+                    child: const Icon(
+                      Icons.apartment,
+                      color: AppColors.textOnPrimary,
+                      size: 28,
+                    ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -505,25 +346,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       children: [
                         Text(
                           _buildingData!['name'] ?? 'Building',
-                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Code: ${_buildingData!['code'] ?? 'N/A'}',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: AppColors.textSecondary),
                         ),
                         if (_buildingData!['statistics'] != null) ...[
                           const SizedBox(height: 4),
                           Text(
                             '${_buildingData!['statistics']['occupiedFlats'] ?? 0}/${_buildingData!['statistics']['totalFlats'] ?? 0} Flats Occupied',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppColors.textSecondary),
                           ),
                         ],
                       ],
@@ -569,7 +409,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 Expanded(
                   child: _StatCard(
                     title: 'Occupied',
-                    value: '${_dashboardData!['building']['occupiedFlats'] ?? 0}',
+                    value:
+                        '${_dashboardData!['building']['occupiedFlats'] ?? 0}',
                     icon: Icons.person,
                     color: AppColors.success,
                   ),
@@ -591,7 +432,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 Expanded(
                   child: _StatCard(
                     title: 'Occupancy Rate',
-                    value: '${_dashboardData!['building']['occupancyRate']?.toStringAsFixed(1) ?? '0'}%',
+                    value:
+                        '${_dashboardData!['building']['occupancyRate']?.toStringAsFixed(1) ?? '0'}%',
                     icon: Icons.trending_up,
                     color: AppColors.info,
                   ),
@@ -696,14 +538,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 title: 'Create Building',
                 icon: Icons.apartment,
                 color: AppColors.primary,
-                onTap: () {
+                onTap: () async {
                   print('🖱️ [FLUTTER] Create Building button clicked');
-                  Navigator.push(
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => const CreateApartmentFlowScreen(),
                     ),
-                  ).then((_) => _loadDashboardData());
+                  );
+                  // Refresh dashboard data after creation while preserving current tab
+                  if (mounted) {
+                    await _loadDashboardData();
+                  }
                 },
               ),
               _ActionCard(
@@ -758,9 +604,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   print('🖱️ [FLUTTER] Create User button clicked');
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateUserScreen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const CreateUserScreen()),
                   );
                 },
               ),
@@ -768,14 +612,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 title: 'Create Staff',
                 icon: Icons.badge,
                 color: AppColors.warning,
-                onTap: () {
+                onTap: () async {
                   print('🖱️ [FLUTTER] Create Staff button clicked');
-                  Navigator.push(
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => const CreateStaffScreen(),
                     ),
-                  ).then((_) => _loadDashboardData());
+                  );
+                  // Refresh dashboard data after creation while preserving current tab
+                  if (mounted) {
+                    await _loadDashboardData();
+                  }
                 },
               ),
               _ActionCard(
@@ -846,9 +694,9 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             title,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppColors.textSecondary,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -907,4 +755,3 @@ class _ActionCard extends StatelessWidget {
     );
   }
 }
-

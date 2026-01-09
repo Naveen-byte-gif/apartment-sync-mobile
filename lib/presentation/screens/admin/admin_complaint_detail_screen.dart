@@ -294,9 +294,11 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                   backgroundImage: _getProfilePictureUrl(createdBy) != null
                       ? NetworkImage(_getProfilePictureUrl(createdBy)!)
                       : null,
-                  onBackgroundImageError: (exception, stackTrace) {
-                    print('❌ [FLUTTER] Failed to load profile picture: $exception');
-                  },
+                  onBackgroundImageError: _getProfilePictureUrl(createdBy) != null
+                      ? (exception, stackTrace) {
+                          print('❌ [FLUTTER] Failed to load profile picture: $exception');
+                        }
+                      : null,
                   child: _getProfilePictureUrl(createdBy) == null
                       ? Text(
                           (createdBy['fullName']?[0] ?? 'R').toUpperCase(),
@@ -1443,9 +1445,11 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
             backgroundImage: profilePicUrl != null
                 ? NetworkImage(profilePicUrl)
                 : null,
-            onBackgroundImageError: (exception, stackTrace) {
-              print('❌ [FLUTTER] Failed to load profile picture: $exception');
-            },
+            onBackgroundImageError: profilePicUrl != null
+                ? (exception, stackTrace) {
+                    print('❌ [FLUTTER] Failed to load profile picture: $exception');
+                  }
+                : null,
             child: profilePicUrl == null
                 ? Text(
                     (postedBy?['fullName']?[0] ?? 'U').toUpperCase(),

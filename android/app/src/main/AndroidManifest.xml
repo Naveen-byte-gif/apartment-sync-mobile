@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     
     <application
-        android:label="HomePulse"
+        android:label="ApartmentSync"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

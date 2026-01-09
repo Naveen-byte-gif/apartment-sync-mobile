@@ -1,4 +1,5 @@
 import '../../../core/imports/app_imports.dart';
+import 'dart:convert';
 
 class CreateUserScreen extends StatefulWidget {
   const CreateUserScreen({super.key});
@@ -29,6 +30,9 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
   bool _isLoadingBuildings = false;
   bool _isLoadingFlats = false;
   bool _isCreating = false;
+  bool _showOTPVerification = false;
+  String? _pendingUserDataJson;
+  String? _adminEmail;
 
   // Password strength tracking
   String _passwordStrength = '';
@@ -92,9 +96,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
   void _validateEmail() {
     final email = _emailController.text.trim();
     setState(() {
-      _isEmailValid =
-          email.isEmpty ||
-          RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+      _isEmailValid = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
     });
   }
 
@@ -121,11 +123,24 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
           _allBuildings = List<Map<String, dynamic>>.from(
             response['data']?['buildings'] ?? [],
           );
-          // Set default building
+          // Validate stored building code against fetched buildings
           if (_allBuildings.isNotEmpty) {
-            _selectedBuildingCode =
-                StorageService.getString(AppConstants.selectedBuildingKey) ??
-                _allBuildings.first['code'];
+            final storedCode = StorageService.getString(AppConstants.selectedBuildingKey);
+            
+            // Check if stored code exists in the fetched buildings
+            final isValidCode = storedCode != null && 
+                _allBuildings.any((b) => b['code'] == storedCode);
+            
+            if (isValidCode) {
+              _selectedBuildingCode = storedCode;
+            } else {
+              // Use first building and update storage
+              _selectedBuildingCode = _allBuildings.first['code'];
+              StorageService.setString(
+                AppConstants.selectedBuildingKey,
+                _selectedBuildingCode!,
+              );
+            }
             _loadAvailableFlats();
           }
         });
@@ -241,10 +256,16 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
       return;
     }
 
-    // Validate email if provided
+    // Validate email (mandatory)
     final email = _emailController.text.trim();
-    if (email.isNotEmpty &&
-        !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+    if (email.isEmpty) {
+      AppMessageHandler.showError(
+        context,
+        'Email is required',
+      );
+      return;
+    }
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
       AppMessageHandler.showError(
         context,
         'Please enter a valid email address',
@@ -258,7 +279,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
       final Map<String, dynamic> userData = {
         'fullName': _fullNameController.text.trim(),
         'phoneNumber': phoneDigits, // Send only digits
-        'email': email.isEmpty ? null : email.toLowerCase(),
+        'email': email.toLowerCase(), // Email is mandatory
         'password': _passwordController.text,
         'role': _selectedRole,
       };
@@ -273,35 +294,34 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
 
       userData['buildingCode'] = _selectedBuildingCode;
 
-      final response = await ApiService.post(ApiConstants.adminUsers, userData);
+      // First step: Request OTP for admin verification
+      final otpResponse = await ApiService.post(
+        '${ApiConstants.adminUsers}/request-otp',
+        userData,
+      );
 
       if (mounted) {
-        if (response['success'] == true) {
+        if (otpResponse['success'] == true) {
+          // Get admin email from response
+          final adminEmail = otpResponse['data']?['adminEmail'];
+          
+          // Store user data for account creation after OTP verification
+          _pendingUserDataJson = jsonEncode(userData);
+          _adminEmail = adminEmail;
+          
+          setState(() {
+            _isCreating = false;
+            _showOTPVerification = true;
+          });
+          
           HapticFeedback.mediumImpact();
-          // Show success message
           AppMessageHandler.showSuccess(
             context,
-            response['message'] ?? 'User created successfully',
+            'OTP sent to your email. Please verify to create the account.',
           );
-          // Wait a bit for user to see the message
-          await Future.delayed(const Duration(milliseconds: 1500));
-          if (mounted) {
-            Navigator.pop(context, true); // Return true to indicate success
-          }
         } else {
-          // Handle specific error cases
-          final errorMessage = response['message'] ?? 'Failed to create user';
-
-          // Check for duplicate user error
-          if (errorMessage.toLowerCase().contains('already exists') ||
-              errorMessage.toLowerCase().contains('duplicate')) {
-            AppMessageHandler.showError(
-              context,
-              'A user with this phone number already exists. Please use a different number.',
-            );
-          } else {
-            AppMessageHandler.showError(context, errorMessage);
-          }
+          final errorMessage = otpResponse['message'] ?? 'Failed to send OTP';
+          AppMessageHandler.showError(context, errorMessage);
         }
       }
     } catch (e) {
@@ -319,7 +339,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
         }
       }
     } finally {
-      if (mounted) {
+      if (mounted && !_showOTPVerification) {
         setState(() => _isCreating = false);
       }
     }
@@ -348,11 +368,73 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
     });
   }
 
+  Future<void> _verifyOTPAndCreateAccount(String otp) async {
+    if (_pendingUserDataJson == null) {
+      AppMessageHandler.showError(context, 'Session expired. Please try again.');
+      setState(() {
+        _showOTPVerification = false;
+      });
+      return;
+    }
+
+    setState(() => _isCreating = true);
+
+    try {
+      final userData = jsonDecode(_pendingUserDataJson!);
+      userData['otp'] = otp;
+
+      final response = await ApiService.post(
+        '${ApiConstants.adminUsers}/verify-otp-create',
+        userData,
+      );
+
+      if (mounted) {
+        if (response['success'] == true) {
+          HapticFeedback.mediumImpact();
+          AppMessageHandler.showSuccess(
+            context,
+            response['message'] ?? 'User created successfully',
+          );
+          await Future.delayed(const Duration(milliseconds: 1500));
+          if (mounted) {
+            Navigator.pop(context, true);
+          }
+        } else {
+          final errorMessage = response['message'] ?? 'Failed to create user';
+          AppMessageHandler.showError(context, errorMessage);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        AppMessageHandler.handleError(context, e);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCreating = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_showOTPVerification) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: const Text(
+            'Verify OTP',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: AppColors.primary,
+          elevation: 0,
+        ),
+        body: _buildOTPVerificationWidget(),
+      );
+    }
+
     return LoadingOverlay(
       isLoading: _isCreating,
-      message: 'Creating user account...',
+      message: 'Sending OTP...',
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
@@ -719,13 +801,13 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Email
+            // Email (Mandatory)
             TextFormField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               decoration: InputDecoration(
-                labelText: 'Email (Optional)',
+                labelText: 'Email *',
                 hintText: 'example@email.com',
                 prefixIcon: const Icon(Icons.email_outlined),
                 suffixIcon: _emailController.text.isNotEmpty
@@ -740,12 +822,13 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                 fillColor: AppColors.surface,
               ),
               validator: (value) {
-                if (value != null && value.trim().isNotEmpty) {
-                  if (!RegExp(
-                    r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                  ).hasMatch(value.trim())) {
-                    return 'Please enter a valid email address';
-                  }
+                if (value == null || value.trim().isEmpty) {
+                  return 'Email is required';
+                }
+                if (!RegExp(
+                  r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                ).hasMatch(value.trim())) {
+                  return 'Please enter a valid email address';
                 }
                 return null;
               },
@@ -1159,10 +1242,181 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
     }).toList();
   }
 
+  Widget _buildOTPVerificationWidget() {
+    final List<TextEditingController> otpControllers =
+        List.generate(6, (_) => TextEditingController());
+    final List<FocusNode> focusNodes = List.generate(6, (_) => FocusNode());
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.verified_user,
+                    size: 64,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Verify Your Email',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'We sent a 6-digit OTP to',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  if (_adminEmail != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      _adminEmail!,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: List.generate(6, (index) {
+                      return SizedBox(
+                        width: 45,
+                        height: 55,
+                        child: TextField(
+                          controller: otpControllers[index],
+                          focusNode: focusNodes[index],
+                          textAlign: TextAlign.center,
+                          keyboardType: TextInputType.number,
+                          maxLength: 1,
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          decoration: InputDecoration(
+                            counterText: '',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(
+                                color: AppColors.primary,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                          onChanged: (value) {
+                            if (value.isNotEmpty && index < 5) {
+                              focusNodes[index + 1].requestFocus();
+                            }
+                            if (value.isEmpty && index > 0) {
+                              focusNodes[index - 1].requestFocus();
+                            }
+                            // Auto-submit when all fields are filled
+                            if (index == 5 &&
+                                value.isNotEmpty &&
+                                otpControllers.every(
+                                  (ctrl) => ctrl.text.isNotEmpty,
+                                )) {
+                              final otp = otpControllers
+                                  .map((c) => c.text)
+                                  .join();
+                              _verifyOTPAndCreateAccount(otp);
+                            }
+                          },
+                        ),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 32),
+                  ElevatedButton(
+                    onPressed: _isCreating
+                        ? null
+                        : () {
+                            final otp = otpControllers
+                                .map((c) => c.text)
+                                .join();
+                            if (otp.length == 6) {
+                              _verifyOTPAndCreateAccount(otp);
+                            } else {
+                              AppMessageHandler.showError(
+                                context,
+                                'Please enter complete 6-digit OTP',
+                              );
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: _isCreating
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : const Text(
+                            'Verify & Create Account',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: _isCreating
+                        ? null
+                        : () {
+                            setState(() {
+                              _showOTPVerification = false;
+                              _pendingUserDataJson = null;
+                              _adminEmail = null;
+                            });
+                          },
+                    child: const Text('Back to Form'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSubmitButton() {
     final isFormValid =
         _fullNameController.text.trim().isNotEmpty &&
         _phoneController.text.length == 10 &&
+        _emailController.text.trim().isNotEmpty &&
+        _isEmailValid &&
         _passwordController.text.isNotEmpty &&
         (_selectedRole != 'resident' ||
             (_selectedFloor != null && _selectedFlatNumber != null));

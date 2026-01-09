@@ -35,13 +35,15 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
       return;
     }
 
-    final phoneNumber = PhoneFormatter.formatForAPI(_phoneController.text.trim());
+    final email = _emailController.text.trim();
     
-    if (!PhoneFormatter.isValidIndianPhone(phoneNumber)) {
+    // Validate email format
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(email)) {
       HapticFeedback.mediumImpact();
       AppMessageHandler.showError(
         context,
-        'Please enter a valid 10-digit Indian phone number',
+        'Please enter a valid email address',
       );
       return;
     }
@@ -53,7 +55,7 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
       final response = await ApiService.post(
         ApiConstants.sendOTP,
         {
-          'phoneNumber': phoneNumber,
+          'email': email,
           'purpose': 'registration',
         },
       );
@@ -66,13 +68,14 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
             context,
             MaterialPageRoute(
               builder: (_) => OTPVerificationScreen(
-                phoneNumber: phoneNumber,
+                email: email,
                 purpose: 'registration',
                 userData: {
                   'fullName': _fullNameController.text.trim(),
-                  'email': _emailController.text.trim().isEmpty 
-                      ? null 
-                      : _emailController.text.trim(),
+                  'email': email,
+                  'phoneNumber': _phoneController.text.trim().isNotEmpty
+                      ? _phoneController.text.trim()
+                      : null,
                   'password': _passwordController.text,
                   'role': 'resident',
                   'apartmentCode': _apartmentCodeController.text.trim().toUpperCase(),
@@ -138,21 +141,21 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
               ),
               const SizedBox(height: 24),
               
-              // Phone Number
+              // Email
               TextFormField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(
-                  labelText: 'Phone Number *',
-                  prefixIcon: Icon(Icons.phone),
+                  labelText: 'Email *',
+                  prefixIcon: Icon(Icons.email),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Please enter your phone number';
+                    return 'Please enter your email address';
                   }
-                  final cleaned = PhoneFormatter.formatForAPI(value);
-                  if (!PhoneFormatter.isValidIndianPhone(cleaned)) {
-                    return 'Please enter a valid 10-digit Indian phone number';
+                  final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                  if (!emailRegex.hasMatch(value)) {
+                    return 'Please enter a valid email address';
                   }
                   return null;
                 },
@@ -175,13 +178,13 @@ class _UserRegisterScreenState extends State<UserRegisterScreen> {
               ),
               const SizedBox(height: 16),
               
-              // Email
+              // Phone Number (Optional but recommended)
               TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
-                  labelText: 'Email (Optional)',
-                  prefixIcon: Icon(Icons.email),
+                  labelText: 'Phone Number (Optional)',
+                  prefixIcon: Icon(Icons.phone),
                 ),
               ),
               const SizedBox(height: 16),

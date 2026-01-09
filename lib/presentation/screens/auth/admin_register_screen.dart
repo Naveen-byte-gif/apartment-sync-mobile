@@ -1,7 +1,6 @@
 import 'package:apartment_aync_mobile/presentation/screens/auth/admin_login_screen.dart';
 
 import '../../../core/imports/app_imports.dart';
-import '../../../core/utils/phone_formatter.dart';
 import 'otp_verification_screen.dart';
 import 'package:flutter/services.dart';
 
@@ -36,15 +35,15 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
       return;
     }
 
-    final phoneNumber = PhoneFormatter.formatForAPI(
-      _phoneController.text.trim(),
-    );
+    final email = _emailController.text.trim();
 
-    if (!PhoneFormatter.isValidIndianPhone(phoneNumber)) {
+    // Validate email format
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(email)) {
       HapticFeedback.mediumImpact();
       AppMessageHandler.showError(
         context,
-        'Please enter a valid 10-digit Indian phone number',
+        'Please enter a valid email address',
       );
       return;
     }
@@ -54,7 +53,7 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
 
     try {
       final response = await ApiService.post(ApiConstants.sendOTP, {
-        'phoneNumber': phoneNumber,
+        'email': email,
         'purpose': 'admin_registration',
       });
 
@@ -66,14 +65,15 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
             context,
             MaterialPageRoute(
               builder: (_) => OTPVerificationScreen(
-                phoneNumber: phoneNumber,
+                email: email,
                 purpose: 'admin_registration',
                 userData: {
                   'fullName': _fullNameController.text.trim(),
-                  'email': _emailController.text.trim().isEmpty
-                      ? null
-                      : _emailController.text.trim(),
+                  'email': email,
                   'password': _passwordController.text,
+                  'phoneNumber': _phoneController.text.trim().isNotEmpty
+                      ? _phoneController.text.trim()
+                      : null,
                   'role': 'admin',
                 },
               ),
@@ -147,21 +147,23 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Phone Number
+                // Email
                 TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
-                    labelText: 'Phone Number *',
-                    prefixIcon: Icon(Icons.phone),
+                    labelText: 'Email *',
+                    prefixIcon: Icon(Icons.email),
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter your phone number';
+                      return 'Please enter your email address';
                     }
-                    final cleaned = PhoneFormatter.formatForAPI(value);
-                    if (!PhoneFormatter.isValidIndianPhone(cleaned)) {
-                      return 'Please enter a valid 10-digit Indian phone number';
+                    final emailRegex = RegExp(
+                      r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                    );
+                    if (!emailRegex.hasMatch(value)) {
+                      return 'Please enter a valid email address';
                     }
                     return null;
                   },
@@ -184,13 +186,13 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Email
+                // Phone Number (Optional)
                 TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(
-                    labelText: 'Email (Optional)',
-                    prefixIcon: Icon(Icons.email),
+                    labelText: 'Phone Number (Optional)',
+                    prefixIcon: Icon(Icons.phone),
                   ),
                 ),
                 const SizedBox(height: 16),

@@ -65,9 +65,14 @@ void main() async {
   _initializeNotificationServiceInBackground();
 }
 
+/// Check FCM connection status - can be called from anywhere
+Future<void> checkFCMConnectionStatus() async {
+  await NotificationService.checkConnectionStatus();
+}
+
 Future<void> _initializeNotificationServiceInBackground() async {
   print('🔧 [MAIN] Starting notification service initialization...');
-  
+
   // Initialize notifications (will handle Firebase errors internally)
   try {
     await NotificationService.initialize();
@@ -78,6 +83,11 @@ Future<void> _initializeNotificationServiceInBackground() async {
 
   print('✅ [MAIN] Notification service initialization completed');
   
+  // Check connection status after initialization
+  print('🔍 [MAIN] Checking FCM connection status...');
+  await Future.delayed(const Duration(seconds: 2));
+  await NotificationService.checkConnectionStatus();
+
   // Initialize TTS service in background
   try {
     await TtsService.initialize();
@@ -93,7 +103,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     print('🏗️ [MyApp] BUILD called - creating widget tree');
-    
+
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(

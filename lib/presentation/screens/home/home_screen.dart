@@ -1,5 +1,6 @@
 import '../../../core/imports/app_imports.dart';
 import '../profile/profile_screen.dart';
+import '../chat/chat_home_screen.dart';
 import 'resident_home_screen.dart';
 import 'tabs/news_tab_screen.dart';
 import 'tabs/payments_tab_screen.dart';
@@ -25,6 +26,8 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2:
         return const PaymentsTabScreen();
       case 3:
+        return const ChatHomeScreen();
+      case 4:
         return const ProfileScreen();
       default:
         return const ResidentHomeScreen();
@@ -66,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'News',
           ),
           BottomNavigationBarItem(icon: Icon(Icons.payment), label: 'Payment'),
+          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),

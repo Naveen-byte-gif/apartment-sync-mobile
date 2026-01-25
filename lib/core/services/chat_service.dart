@@ -13,6 +13,8 @@ class ChatService {
     String? wing,
     String? block,
     int? floorNumber,
+    String? buildingCode, // For admin to specify building
+    bool isAdmin = false, // Whether this is an admin request
   }) async {
     final queryParams = <String, String>{};
     if (chatType != null) queryParams['chatType'] = chatType;
@@ -20,14 +22,18 @@ class ChatService {
     if (block != null) queryParams['block'] = block;
     if (floorNumber != null)
       queryParams['floorNumber'] = floorNumber.toString();
+    if (buildingCode != null) queryParams['buildingCode'] = buildingCode;
 
     final queryString = queryParams.isEmpty
         ? ''
         : '?${queryParams.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
 
-    final response = await ApiService.get(
-      '${ApiConstants.communityChat}$queryString',
-    );
+    // Use admin endpoint if admin and building code is provided
+    final endpoint = (isAdmin && buildingCode != null)
+        ? '${ApiConstants.adminCommunityChat}$queryString'
+        : '${ApiConstants.communityChat}$queryString';
+
+    final response = await ApiService.get(endpoint);
 
     if (response['success'] == true && response['data'] != null) {
       return CommunityChat.fromJson(response['data']['chat']);
@@ -100,8 +106,16 @@ class ChatService {
   // ==================== P2P CHAT ====================
 
   /// Get chatable users (users that can be chatted with)
-  static Future<List<UserData>> getChatableUsers() async {
-    final response = await ApiService.get(ApiConstants.chatableUsers);
+  static Future<List<UserData>> getChatableUsers({
+    String? buildingCode,
+    bool isAdmin = false,
+  }) async {
+    String endpoint = ApiConstants.chatableUsers;
+    if (isAdmin && buildingCode != null) {
+      endpoint = '${ApiConstants.adminChatableUsers}?buildingCode=$buildingCode';
+    }
+
+    final response = await ApiService.get(endpoint);
 
     if (response['success'] == true && response['data'] != null) {
       return (response['data']['users'] as List)
@@ -112,8 +126,16 @@ class ChatService {
   }
 
   /// Get user's P2P chats
-  static Future<List<P2PChat>> getP2PChats() async {
-    final response = await ApiService.get(ApiConstants.p2pChats);
+  static Future<List<P2PChat>> getP2PChats({
+    String? buildingCode,
+    bool isAdmin = false,
+  }) async {
+    String endpoint = ApiConstants.p2pChats;
+    if (isAdmin && buildingCode != null) {
+      endpoint = '${ApiConstants.adminP2PChats}?buildingCode=$buildingCode';
+    }
+
+    final response = await ApiService.get(endpoint);
 
     if (response['success'] == true && response['data'] != null) {
       return (response['data']['chats'] as List)

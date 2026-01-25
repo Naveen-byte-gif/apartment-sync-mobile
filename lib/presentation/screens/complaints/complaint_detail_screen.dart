@@ -1463,25 +1463,33 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
                   children: [
                     Icon(Icons.person, size: 14, color: AppColors.textLight),
                     const SizedBox(width: 4),
-                    Text(
-                      updatedBy?['fullName'] ?? 'Admin',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textLight,
+                    Expanded(
+                      child: Text(
+                        updatedBy?['fullName'] ?? 'Admin',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textLight,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 8),
                     Icon(
                       Icons.access_time,
                       size: 14,
                       color: AppColors.textLight,
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      _formatDateTime(timestamp),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textLight,
+                    Flexible(
+                      child: Text(
+                        _formatDateTime(timestamp),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textLight,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],

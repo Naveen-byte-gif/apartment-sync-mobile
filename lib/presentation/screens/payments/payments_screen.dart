@@ -1,7 +1,18 @@
 import '../../../core/imports/app_imports.dart';
+import 'invoice_list_screen.dart';
 
 class PaymentsScreen extends StatelessWidget {
   const PaymentsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const InvoiceListScreen();
+  }
+}
+
+// Legacy payments screen - kept for reference
+class _LegacyPaymentsScreen extends StatelessWidget {
+  const _LegacyPaymentsScreen();
 
   @override
   Widget build(BuildContext context) {

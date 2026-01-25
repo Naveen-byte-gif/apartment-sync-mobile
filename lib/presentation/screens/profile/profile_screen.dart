@@ -8,7 +8,9 @@ import 'admin_profile_screen.dart';
 import 'staff_profile_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
+  final bool showAppBar;
+  
+  const ProfileScreen({super.key, this.showAppBar = false});
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,7 @@ class ProfileScreen extends StatelessWidget {
         }
       }
       // Default to resident if no user data
-      return const ResidentProfileScreen();
+      return ResidentProfileScreen(showAppBar: showAppBar);
     }
     
     // Route to appropriate profile screen based on role
@@ -43,7 +45,7 @@ class ProfileScreen extends StatelessWidget {
         return const StaffProfileScreen();
       case 'resident':
       default:
-        return const ResidentProfileScreen();
+        return ResidentProfileScreen(showAppBar: showAppBar);
     }
   }
 }

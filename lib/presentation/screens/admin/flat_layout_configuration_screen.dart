@@ -44,8 +44,9 @@ class FloorFlatConfig {
 class FlatLayoutConfigurationScreen extends StatefulWidget {
   final int totalFloors;
   final int
-  flatsPerFloor; // Optional: used as default if floorsConfig not provided
+  flatsPerFloor; // Optional: used as default if floorsConfig not provided (uniform mode)
   final List<FloorFlatConfig>? floorsConfig; // Optional: pre-configured floors
+  final Map<int, int>? flatsPerFloorMap; // Optional: variable flats per floor {floorNum: flatsCount}
   final Function(List<FloorFlatConfig>) onConfigurationComplete;
 
   const FlatLayoutConfigurationScreen({
@@ -53,6 +54,7 @@ class FlatLayoutConfigurationScreen extends StatefulWidget {
     required this.totalFloors,
     this.flatsPerFloor = 4,
     this.floorsConfig,
+    this.flatsPerFloorMap, // New: for variable flats per floor
     required this.onConfigurationComplete,
   });
 
@@ -92,19 +94,23 @@ class _FlatLayoutConfigurationScreenState
       // Ensure all floors are initialized
       for (int floorNum = 1; floorNum <= widget.totalFloors; floorNum++) {
         if (!_floorConfigs.containsKey(floorNum)) {
+          // Use variable flats per floor map if available, otherwise use default
+          final requiredFlats = widget.flatsPerFloorMap?[floorNum] ?? widget.flatsPerFloor;
           _floorConfigs[floorNum] = FloorFlatConfig(
             floorNumber: floorNum,
-            totalFlats: widget.flatsPerFloor,
+            totalFlats: requiredFlats,
           );
           _expandedFloors[floorNum] = false;
         }
       }
     } else {
-      // Initialize with default
+      // Initialize with default or variable flats per floor
       for (int floorNum = 1; floorNum <= widget.totalFloors; floorNum++) {
+        // Use variable flats per floor map if available, otherwise use default
+        final requiredFlats = widget.flatsPerFloorMap?[floorNum] ?? widget.flatsPerFloor;
         final config = FloorFlatConfig(
           floorNumber: floorNum,
-          totalFlats: widget.flatsPerFloor,
+          totalFlats: requiredFlats,
         );
         _floorConfigs[floorNum] = config;
         _expandedFloors[floorNum] = false;
@@ -121,12 +127,13 @@ class _FlatLayoutConfigurationScreenState
         _showCustomizeOption = true;
         // Initialize with default distribution for customization
         for (int floorNum = 1; floorNum <= widget.totalFloors; floorNum++) {
-          if (!_floorConfigs.containsKey(floorNum)) {
-            _floorConfigs[floorNum] = FloorFlatConfig(
-              floorNumber: floorNum,
-              totalFlats: widget.flatsPerFloor,
-            );
-          }
+        if (!_floorConfigs.containsKey(floorNum)) {
+          final requiredFlats = widget.flatsPerFloorMap?[floorNum] ?? widget.flatsPerFloor;
+          _floorConfigs[floorNum] = FloorFlatConfig(
+            floorNumber: floorNum,
+            totalFlats: requiredFlats,
+          );
+        }
         }
       }
     });
@@ -158,7 +165,7 @@ class _FlatLayoutConfigurationScreenState
   }
 
   int _getRequiredFlatsForFloor(int floorNumber) {
-    // Try to get from floorsConfig first, then use flatsPerFloor
+    // Priority 1: Get from floorsConfig if available
     if (widget.floorsConfig != null) {
       try {
         final config = widget.floorsConfig!.firstWhere(
@@ -166,9 +173,22 @@ class _FlatLayoutConfigurationScreenState
         );
         return config.requiredTotalFlats;
       } catch (e) {
-        return widget.flatsPerFloor;
+        // Continue to next priority
       } 
     }
+    
+    // Priority 2: Get from variable flats per floor map if available
+    if (widget.flatsPerFloorMap != null && widget.flatsPerFloorMap!.containsKey(floorNumber)) {
+      return widget.flatsPerFloorMap![floorNumber]!;
+    }
+    
+    // Priority 3: Get from current floor config's totalFlats if set
+    final currentConfig = _floorConfigs[floorNumber];
+    if (currentConfig != null && currentConfig.totalFlats != null) {
+      return currentConfig.totalFlats!;
+    }
+    
+    // Priority 4: Default to uniform flatsPerFloor
     return widget.flatsPerFloor;
   }
 
@@ -187,6 +207,14 @@ class _FlatLayoutConfigurationScreenState
 
   int _calculateTotalFlats() {
     if (_isAutoLayoutMode) {
+      // Calculate total based on variable flats per floor if available
+      if (widget.flatsPerFloorMap != null) {
+        return widget.flatsPerFloorMap!.values.fold<int>(
+          0,
+          (sum, count) => sum + count,
+        );
+      }
+      // Fallback to uniform flats per floor
       return widget.totalFloors * widget.flatsPerFloor;
     }
     return _floorConfigs.values.fold<int>(
@@ -206,8 +234,10 @@ class _FlatLayoutConfigurationScreenState
 
       if (_isAutoLayoutMode) {
         // Auto-layout: rotate flat types
+        // Use variable flats per floor if available, otherwise use uniform
+        final flatsCountForFloor = _getRequiredFlatsForFloor(floorNum);
         const defaultTypes = ['1BHK', '2BHK', '3BHK', '4BHK'];
-        for (int i = 1; i <= widget.flatsPerFloor; i++) {
+        for (int i = 1; i <= flatsCountForFloor; i++) {
           final flatType = defaultTypes[(i - 1) % 4];
           flats.add({
             'flatNumber': '${floorNum}${flatIndex.toString().padLeft(2, '0')}',
@@ -237,9 +267,18 @@ class _FlatLayoutConfigurationScreenState
 
   void _onSave() {
     if (!_isAutoLayoutMode && !_areAllFloorsValid()) {
+      // Build error message with floor-specific details
+      List<String> invalidFloors = [];
+      for (int floorNum = 1; floorNum <= widget.totalFloors; floorNum++) {
+        if (!_isFloorValid(floorNum)) {
+          final configured = _getTotalFlatsForFloor(floorNum);
+          final required = _getRequiredFlatsForFloor(floorNum);
+          invalidFloors.add('Floor $floorNum ($configured/$required)');
+        }
+      }
       AppMessageHandler.showError(
         context,
-        'Please configure all floors correctly. Total flats per floor must match ${widget.flatsPerFloor}',
+        'Please configure all floors correctly. Invalid floors: ${invalidFloors.join(', ')}',
       );
       return;
     }
@@ -256,22 +295,32 @@ class _FlatLayoutConfigurationScreenState
     // Ensure all floors are included with proper validation
     for (int floorNum = 1; floorNum <= widget.totalFloors; floorNum++) {
       final config = _floorConfigs[floorNum];
+      final requiredFlats = _getRequiredFlatsForFloor(floorNum);
+      
       if (config != null) {
-        // Validate that floor has correct number of flats
-        if (config.totalFlats == widget.flatsPerFloor) {
-          configs.add(config);
+        // Validate that floor has correct number of flats (check against floor-specific requirement)
+        final configuredFlats = config.configuredTotalFlats;
+        
+        if (configuredFlats == requiredFlats) {
+          // Ensure the config has the correct totalFlats set
+          final finalConfig = config.totalFlats == requiredFlats 
+              ? config 
+              : config.copyWith(totalFlats: requiredFlats);
+          configs.add(finalConfig);
         } else {
-          // If floor doesn't have correct flats, add empty config (will use default)
-          // But this shouldn't happen as we validate before saving
+          // Floor doesn't have correct flats
           AppMessageHandler.showError(
             context,
-            'Floor $floorNum has ${config.totalFlats} flats, but expected ${widget.flatsPerFloor}',
+            'Floor $floorNum has $configuredFlats flats, but expected $requiredFlats',
           );
           return;
         }
       } else {
-        // Floor not configured, add empty config (backend will use default)
-        configs.add(FloorFlatConfig(floorNumber: floorNum));
+        // Floor not configured, create default config with required flats
+        configs.add(FloorFlatConfig(
+          floorNumber: floorNum,
+          totalFlats: requiredFlats,
+        ));
       }
     }
 
@@ -517,35 +566,48 @@ class _FlatLayoutConfigurationScreenState
                 ),
               ),
               if (!_isAutoLayoutMode)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
+                  Builder(
+                    builder: (context) {
+                      final requiredFlats = _getRequiredFlatsForFloor(floorNumber);
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isValid
+                              ? AppColors.success.withOpacity(0.1)
+                              : AppColors.error.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$totalFlats / $requiredFlats',
+                          style: TextStyle(
+                            color: isValid ? AppColors.success : AppColors.error,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  decoration: BoxDecoration(
-                    color: isValid
-                        ? AppColors.success.withOpacity(0.1)
-                        : AppColors.error.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '$totalFlats / ${widget.flatsPerFloor}',
-                    style: TextStyle(
-                      color: isValid ? AppColors.success : AppColors.error,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
             ],
           ),
           subtitle: !_isAutoLayoutMode && !isValid
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Configure ${_getRequiredFlatsForFloor(floorNumber) - totalFlats} more flat${_getRequiredFlatsForFloor(floorNumber) - totalFlats != 1 ? 's' : ''}',
-                    style: TextStyle(color: AppColors.error, fontSize: 12),
-                  ),
+              ? Builder(
+                  builder: (context) {
+                    final required = _getRequiredFlatsForFloor(floorNumber);
+                    final difference = required - totalFlats;
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        difference > 0
+                            ? 'Configure $difference more flat${difference != 1 ? 's' : ''}'
+                            : 'Reduce by ${-difference} flat${difference != -1 ? 's' : ''}',
+                        style: TextStyle(color: AppColors.error, fontSize: 12),
+                      ),
+                    );
+                  },
                 )
               : null,
           trailing: Icon(
@@ -570,6 +632,9 @@ class _FlatLayoutConfigurationScreenState
 
   Widget _buildAutoLayoutInfo(int floorNumber) {
     const defaultTypes = ['1BHK', '2BHK', '3BHK', '4BHK'];
+    // Get the correct number of flats for this floor (variable or uniform)
+    final flatsCountForFloor = _getRequiredFlatsForFloor(floorNumber);
+    
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -593,7 +658,7 @@ class _FlatLayoutConfigurationScreenState
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: List.generate(widget.flatsPerFloor, (index) {
+            children: List.generate(flatsCountForFloor, (index) {
               final flatType = defaultTypes[index % 4];
               final flatNumber =
                   '${floorNumber}${(index + 1).toString().padLeft(2, '0')}';
@@ -1262,3 +1327,4 @@ class _FlatLayoutConfigurationScreenState
     );
   }
 }
+

@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:flutter/material.dart';
 import '../../../core/imports/app_imports.dart';
 import '../../../data/models/chat_data.dart';
 import '../../../data/models/user_data.dart';
@@ -11,7 +11,14 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class CommunityChatScreen extends StatefulWidget {
-  const CommunityChatScreen({super.key});
+  final String? buildingCode;
+  final bool isAdmin;
+
+  const CommunityChatScreen({
+    super.key,
+    this.buildingCode,
+    this.isAdmin = false,
+  });
 
   @override
   State<CommunityChatScreen> createState() => _CommunityChatScreenState();
@@ -30,12 +37,18 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   String? _apartmentName;
   int _onlineCount = 0;
   bool _isSending = false;
-  bool _showEmojiPicker = false;
   final FocusNode _focusNode = FocusNode();
+  // Message deduplication - track seen message IDs
+  final Set<String> _seenMessageIds = {};
+  // Track last read message timestamp
+  DateTime? _lastReadTimestamp;
 
   @override
   void initState() {
     super.initState();
+    _messageController.addListener(() {
+      setState(() {}); // Update UI when text changes for send button state
+    });
     _loadUserAndChat();
     _setupSocketListeners();
   }
@@ -56,17 +69,35 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
         setState(() {
           _currentUserId = user.id;
           _currentUserRole = user.role;
-          _apartmentName = user.apartmentCode ?? 'Community';
+          // Use building code if admin, otherwise use user's apartment code
+          _apartmentName = widget.isAdmin && widget.buildingCode != null
+              ? widget.buildingCode!
+              : (user.apartmentCode ?? 'Community');
         });
       }
 
-      final chat = await ChatService.getCommunityChat();
+      final chat = await ChatService.getCommunityChat(
+        buildingCode: widget.buildingCode,
+        isAdmin: widget.isAdmin,
+      );
+      
+      // Initialize seen message IDs to prevent duplicates
+      _seenMessageIds.clear();
+      for (final message in chat.messages) {
+        _seenMessageIds.add(message.messageId);
+      }
+      
+      // Mark all messages as read when chat loads
+      _lastReadTimestamp = DateTime.now();
+      
       setState(() {
         _chat = chat;
         _onlineCount = chat.onlineCount;
         _isLoading = false;
         _hasError = false;
         _errorMessage = null;
+        // Update apartment name from chat
+        _apartmentName = chat.apartmentCode;
       });
 
       // Join chat room
@@ -194,10 +225,18 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     socketService.on('new_community_message', (data) {
       if (mounted && data['message'] != null) {
         final message = ChatMessage.fromJson(data['message']);
-        setState(() {
-          _chat?.messages.add(message);
-        });
-        _scrollToBottom();
+        
+        // Prevent duplicate messages - check if message ID already exists
+        if (!_seenMessageIds.contains(message.messageId)) {
+          _seenMessageIds.add(message.messageId);
+          setState(() {
+            _chat?.messages.add(message);
+          });
+          _scrollToBottom();
+          
+          // Mark as read if user is viewing the chat
+          _lastReadTimestamp = DateTime.now();
+        }
       }
     });
 
@@ -286,11 +325,15 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
 
     setState(() => _isSending = true);
     try {
-      await ChatService.sendCommunityMessage(messageText: text);
+      // Clear input immediately for better UX
       _messageController.clear();
+      
+      await ChatService.sendCommunityMessage(messageText: text);
       _scrollToBottom();
     } catch (e) {
       print('❌ [FLUTTER] Error sending message: $e');
+      // Restore message text on error
+      _messageController.text = text;
       if (mounted) {
         AppMessageHandler.showError(
           context,
@@ -305,22 +348,37 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   }
 
   Future<void> _sendImage() async {
-    if (_chat == null) return;
+    if (_chat == null || _isSending) return;
     
     try {
       final picker = ImagePicker();
-      final image = await picker.pickImage(source: ImageSource.gallery);
+      final image = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85, // Compress for faster upload
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
       if (image == null) return;
 
       setState(() => _isSending = true);
       final file = File(image.path);
+      
+      // Show loading indicator
+      if (mounted) {
+        AppMessageHandler.showInfo(context, 'Uploading image...');
+      }
+      
       final uploadResult = await ChatService.uploadChatImage(file);
-      await ChatService.sendCommunityMessage(
-        messageText: '',
-        mediaUrl: uploadResult['url'],
-        messageType: 'image',
-      );
-      _scrollToBottom();
+      
+      // Prevent duplicate if message already exists
+      if (uploadResult['url'] != null) {
+        await ChatService.sendCommunityMessage(
+          messageText: '',
+          mediaUrl: uploadResult['url'],
+          messageType: 'image',
+        );
+        _scrollToBottom();
+      }
     } catch (e) {
       print('❌ [FLUTTER] Error sending image: $e');
       if (mounted) {
@@ -362,6 +420,50 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
 
   String _getInitials(String name) {
     return name.split(' ').map((n) => n[0]).take(2).join().toUpperCase();
+  }
+
+  bool _shouldShowDateSeparator(DateTime previous, DateTime current) {
+    return previous.year != current.year ||
+        previous.month != current.month ||
+        previous.day != current.day;
+  }
+
+  Widget _buildDateSeparator(DateTime date) {
+    final today = DateTime.now();
+    final yesterday = today.subtract(const Duration(days: 1));
+    
+    String dateText;
+    final isToday = date.year == today.year &&
+        date.month == today.month &&
+        date.day == today.day;
+    final isYesterday = date.year == yesterday.year &&
+        date.month == yesterday.month &&
+        date.day == yesterday.day;
+    
+    if (isToday) {
+      dateText = 'Today';
+    } else if (isYesterday) {
+      dateText = 'Yesterday';
+    } else {
+      dateText = DateFormat('MMM d, yyyy').format(date);
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.grey[300]!.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        dateText,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Colors.grey[700],
+        ),
+      ),
+    );
   }
 
   @override
@@ -407,63 +509,113 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     return Scaffold(
       body: Column(
         children: [
-          // Header
+          // Header - WhatsApp-like design
           Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.white,
-            child: Row(
-              children: [
-                const Icon(Icons.group, color: AppColors.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _apartmentName ?? 'Community',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '$_onlineCount online',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
-                IconButton(icon: const Icon(Icons.search), onPressed: () {}),
-                IconButton(
-                  icon: const Icon(Icons.notifications_outlined),
-                  onPressed: () {},
-                ),
-                IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
               ],
             ),
-          ),
-          const Divider(height: 1),
-
-          // Messages or Empty State
-          Expanded(
-            child: hasMessages
-                ? ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: visibleMessages.length,
-                    itemBuilder: (context, index) {
-                      final message = visibleMessages[index];
-                      return _buildMessageBubble(message);
-                    },
-                  )
-                : ChatEmptyStateWidget(
-                    type: ChatEmptyStateType.community,
-                    customTitle: 'No Messages Yet',
-                    customDescription: 'Be the first to start the conversation! Share updates, ask questions, or connect with your community.',
+            child: SafeArea(
+              bottom: false,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
                   ),
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Colors.white.withOpacity(0.2),
+                    child: const Icon(
+                      Icons.group,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _apartmentName ?? 'Community',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          '$_onlineCount online',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.search, color: Colors.white),
+                    onPressed: () {},
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                    onPressed: () {},
+                  ),
+                ],
+              ),
+            ),
           ),
 
-          // Input Area
+          // Messages or Empty State - WhatsApp-like background
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+              ),
+              child: hasMessages
+                  ? ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      itemCount: visibleMessages.length,
+                      itemBuilder: (context, index) {
+                        final message = visibleMessages[index];
+                        // Show date separator if needed
+                        final showDateSeparator = index == 0 ||
+                            _shouldShowDateSeparator(
+                              visibleMessages[index - 1].createdAt,
+                              message.createdAt,
+                            );
+                        return Column(
+                          children: [
+                            if (showDateSeparator)
+                              _buildDateSeparator(message.createdAt),
+                            _buildMessageBubble(message),
+                          ],
+                        );
+                      },
+                    )
+                  : ChatEmptyStateWidget(
+                      type: ChatEmptyStateType.community,
+                      customTitle: 'No Messages Yet',
+                      customDescription:
+                          'Be the first to start the conversation! Share updates, ask questions, or connect with your community.',
+                    ),
+            ),
+          ),
+
+          // Input Area - Clean WhatsApp-like design
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             decoration: BoxDecoration(
@@ -477,49 +629,86 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
               ],
             ),
             child: SafeArea(
+              top: false,
               child: Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.emoji_emotions_outlined),
-                    onPressed: () {},
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.image_outlined),
-                    onPressed: _sendImage,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.attach_file),
-                    onPressed: () {},
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      decoration: InputDecoration(
-                        hintText: 'Message community...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey[100],
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
+                  // Image Button
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.image_outlined,
+                        color: _isSending ? Colors.grey[400] : AppColors.primary,
+                        size: 22,
                       ),
-                      maxLines: null,
-                      textCapitalization: TextCapitalization.sentences,
+                      onPressed: _isSending ? null : _sendImage,
+                      tooltip: 'Send image',
                     ),
                   ),
-                  IconButton(
-                    icon: _isSending
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                    onPressed: _isSending ? null : _sendMessage,
+                  const SizedBox(width: 8),
+                  // Text Input
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: TextField(
+                        controller: _messageController,
+                        focusNode: _focusNode,
+                        decoration: InputDecoration(
+                          hintText: 'Type a message...',
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                          hintStyle: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 15,
+                          ),
+                        ),
+                        maxLines: null,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: const TextStyle(fontSize: 15),
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Send Button
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _messageController.text.trim().isNotEmpty && !_isSending
+                          ? AppColors.primary
+                          : Colors.grey[300],
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: _isSending
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.send_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                      onPressed: (_messageController.text.trim().isNotEmpty && !_isSending)
+                          ? _sendMessage
+                          : null,
+                      tooltip: 'Send message',
+                    ),
                   ),
                 ],
               ),
@@ -534,234 +723,330 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     final isMe = message.senderId == _currentUserId;
     final roleColor = _getRoleColor(message.senderRole);
     final initials = _getInitials(message.senderName);
+    final isRead = _lastReadTimestamp != null && 
+                   message.createdAt.isBefore(_lastReadTimestamp!);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: EdgeInsets.only(
+        bottom: 8,
+        top: 4,
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: isMe
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!isMe) ...[
             CircleAvatar(
-              radius: 20,
+              radius: 18,
               backgroundColor: roleColor,
               child: Text(
                 initials,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
           ],
-          Expanded(
+          Flexible(
             child: Column(
-              crossAxisAlignment: isMe
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
+              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                if (!isMe)
-                  Row(
-                    children: [
-                      Text(
-                        message.senderName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                if (!isMe) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          message.senderName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: roleColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              message.senderRole == 'admin'
-                                  ? Icons.shield
-                                  : Icons.person,
-                              size: 12,
-                              color: Colors.white,
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: roleColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: roleColor.withOpacity(0.3),
+                              width: 1,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              message.senderRole.toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                message.senderRole == 'admin'
+                                    ? Icons.shield
+                                    : message.senderRole == 'staff'
+                                    ? Icons.work
+                                    : Icons.person,
+                                size: 10,
+                                color: roleColor,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 3),
+                              Text(
+                                message.senderRole.toUpperCase(),
+                                style: TextStyle(
+                                  color: roleColor,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                if (message.isPinned) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.push_pin,
-                        size: 14,
-                        color: Colors.orange,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Pinned',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
-                const SizedBox(height: 4),
+                if (message.isPinned) ...[
+                  Padding(
+                    padding: EdgeInsets.only(
+                      left: isMe ? 0 : 4,
+                      right: isMe ? 4 : 0,
+                      bottom: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.push_pin,
+                          size: 12,
+                          color: Colors.orange[700],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Pinned',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange[700],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.75,
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: message.messageType == 'image' ? 4 : 12,
+                    vertical: message.messageType == 'image' ? 4 : 8,
+                  ),
                   decoration: BoxDecoration(
-                    color: message.isEmergency
-                        ? Colors.red[50]
-                        : (message.isPinned || message.senderRole == 'admin')
-                        ? Colors.brown[50]
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: message.isEmergency
-                        ? Border.all(color: Colors.red, width: 2)
-                        : null,
+                    color: isMe
+                        ? (message.isEmergency
+                            ? Colors.red[400]
+                            : AppColors.primary)
+                        : (message.isEmergency
+                            ? Colors.red[50]
+                            : message.senderRole == 'admin'
+                            ? Colors.purple[50]
+                            : Colors.grey[100]),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular(isMe ? 16 : 4),
+                      bottomRight: Radius.circular(isMe ? 4 : 16),
+                    ),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.05),
                         blurRadius: 4,
-                        offset: const Offset(0, 2),
+                        offset: const Offset(0, 1),
                       ),
                     ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (message.messageText.isNotEmpty)
-                        Text(
-                          message.messageText,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: message.isEmergency
-                                ? Colors.red[900]
-                                : Colors.black87,
+                      if (message.messageText.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            message.messageText,
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: isMe
+                                  ? Colors.white
+                                  : (message.isEmergency
+                                      ? Colors.red[900]
+                                      : Colors.black87),
+                              height: 1.4,
+                            ),
                           ),
                         ),
+                      ],
                       if (message.mediaUrl != null) ...[
                         if (message.messageText.isNotEmpty)
-                          const SizedBox(height: 8),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 250),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: message.mediaUrl!,
-                              fit: BoxFit.contain,
-                              placeholder: (context, url) => Container(
-                                width: 200,
-                                height: 200,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[200],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
+                          const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: CachedNetworkImage(
+                            imageUrl: message.mediaUrl!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            placeholder: (context, url) => Container(
+                              width: 250,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[200],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    isMe ? Colors.white70 : AppColors.primary,
+                                  ),
                                 ),
                               ),
-                              errorWidget: (context, url, error) => Container(
-                                width: 200,
-                                height: 200,
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[200],
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.error,
-                                  color: Colors.red,
-                                ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              width: 250,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[200],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.broken_image,
+                                    color: Colors.grey[400],
+                                    size: 40,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Failed to load image',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-                if (message.reactions.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      for (final reaction in message.reactions)
-                        GestureDetector(
-                          onTap: () =>
-                              _addReaction(message.messageId, reaction.emoji),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  reaction.emoji,
-                                  style: const TextStyle(fontSize: 14),
+                      if (message.messageText.isNotEmpty || message.mediaUrl != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                DateFormat('h:mm a').format(message.createdAt),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: isMe
+                                      ? Colors.white70
+                                      : Colors.grey[600],
                                 ),
+                              ),
+                              if (isMe) ...[
                                 const SizedBox(width: 4),
-                                Text(
-                                  '${message.reactions.where((r) => r.emoji == reaction.emoji).length}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                Icon(
+                                  isRead ? Icons.done_all : Icons.done,
+                                  size: 14,
+                                  color: isRead
+                                      ? Colors.blue[300]
+                                      : Colors.white70,
                                 ),
                               ],
-                            ),
+                            ],
                           ),
                         ),
                     ],
                   ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  DateFormat('h:mm a').format(message.createdAt),
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                 ),
+                if (message.reactions.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: EdgeInsets.only(
+                      left: isMe ? 0 : 4,
+                      right: isMe ? 4 : 0,
+                    ),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final reaction in message.reactions)
+                          GestureDetector(
+                            onTap: () =>
+                                _addReaction(message.messageId, reaction.emoji),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.grey[300]!,
+                                  width: 1,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 2,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    reaction.emoji,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${message.reactions.where((r) => r.emoji == reaction.emoji).length}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           if (isMe) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             CircleAvatar(
-              radius: 20,
+              radius: 18,
               backgroundColor: roleColor,
               child: Text(
                 initials,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.bold,
                 ),
               ),

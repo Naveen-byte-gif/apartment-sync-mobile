@@ -28,12 +28,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   File? _selectedImage;
   String? _currentProfilePictureUrl;
   
-  // Flat and building data
-  Map<String, dynamic>? _buildingData;
-  Map<String, dynamic>? _flatData;
-  
   String? _initialFullName;
   String? _initialEmail;
+  String? _initialEmergencyContact;
 
   @override
   void initState() {
@@ -42,8 +39,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (widget.user != null) {
       _fullNameController.text = widget.user!.fullName;
       _emailController.text = widget.user!.email ?? '';
+      _emergencyContactController.text = widget.user!.emergencyContact ?? '';
       _initialFullName = widget.user!.fullName;
       _initialEmail = widget.user!.email;
+      _initialEmergencyContact = widget.user!.emergencyContact;
       
       // Get profile picture URL
       if (widget.user!.profilePicture != null) {
@@ -57,31 +56,48 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       // Add listeners to detect changes
       _fullNameController.addListener(_checkForChanges);
       _emailController.addListener(_checkForChanges);
+      _emergencyContactController.addListener(_checkForChanges);
     }
   }
 
   void _checkForChanges() {
     final hasChanges = _fullNameController.text != _initialFullName ||
         _emailController.text != (_initialEmail ?? '') ||
+        _emergencyContactController.text.trim() != (_initialEmergencyContact ?? '') ||
         _selectedImage != null;
     if (hasChanges != _hasChanges) {
       setState(() => _hasChanges = hasChanges);
     }
   }
 
-  Future<void> _loadData() async {
-    try {
-      // Load building and flat details
-      final buildingResponse = await ApiService.get(ApiConstants.buildingDetails);
-      if (buildingResponse['success'] == true) {
-        setState(() {
-          _buildingData = buildingResponse['data']?['building'];
-          _flatData = buildingResponse['data']?['flat'];
-        });
-      }
-    } catch (e) {
-      print('❌ [FLUTTER] Error loading building data: $e');
+  String _getRoleLabel() {
+    final role = widget.user?.role?.toUpperCase() ?? 'RESIDENT';
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return 'ADMINISTRATOR';
+      case 'staff':
+        return 'STAFF';
+      case 'resident':
+      default:
+        return 'RESIDENT';
     }
+  }
+
+  Color _getRoleColor() {
+    final role = widget.user?.role?.toLowerCase() ?? 'resident';
+    switch (role) {
+      case 'admin':
+        return AppColors.error;
+      case 'staff':
+        return AppColors.warning;
+      case 'resident':
+      default:
+        return AppColors.primary;
+    }
+  }
+
+  Future<void> _loadData() async {
+    // No need to load building/flat data anymore
   }
 
   @override
@@ -194,6 +210,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'email': _emailController.text.trim().isEmpty
             ? null
             : _emailController.text.trim(),
+        'emergencyContact': _emergencyContactController.text.trim().isEmpty
+            ? null
+            : _emergencyContactController.text.trim(),
         if (profilePictureUrl != null) 'profilePicture': profilePictureUrl,
       };
 
@@ -245,53 +264,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  void _showChangePasswordDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Change Password'),
-        content: const Text('Password change feature will be available soon. Please contact admin for password reset.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _handleLogout() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await StorageService.remove(AppConstants.tokenKey);
-              await StorageService.remove(AppConstants.userKey);
-              ApiService.setToken(null);
-              if (mounted) {
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/login',
-                  (route) => false,
-                );
-              }
-            },
-            child: const Text('Logout', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -341,14 +313,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               
               // Editable Personal Information Section
               _buildEditableSection(),
-              const SizedBox(height: 24),
-              
-              // Flat Details Display (Read-Only)
-              _buildFlatDetailsSection(),
-              const SizedBox(height: 24),
-              
-              // Security & Account Section
-              _buildSecuritySection(),
               const SizedBox(height: 100), // Space for fixed button
             ],
           ),
@@ -457,49 +421,52 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.home,
-                size: 16,
-                color: AppColors.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${_flatData?['flatCode'] ?? widget.user?.flatCode ?? 'N/A'}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          // Show location only for residents
+          if (widget.user?.role == 'resident') ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.home,
+                  size: 16,
                   color: AppColors.textSecondary,
                 ),
-              ),
-              if (widget.user?.wing != null) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Text(
-                  '•',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Wing ${widget.user!.wing}',
+                  widget.user?.flatCode ?? 'N/A',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: AppColors.textSecondary,
                   ),
                 ),
+                if (widget.user?.wing != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '•',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    widget.user!.wing!,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
+            ),
+          ],
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
+              color: _getRoleColor().withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              'RESIDENT',
+              _getRoleLabel(),
               style: TextStyle(
-                color: AppColors.primary,
+                color: _getRoleColor(),
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1,
@@ -626,147 +593,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildFlatDetailsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(
-              Icons.lock_outline,
-              size: 18,
-              color: AppColors.textSecondary,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'Flat Details',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'For flat detail changes, please contact the society admin',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: AppColors.textSecondary,
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 2.5,
-            children: [
-              _buildFlatDetailItem(
-                'Flat Number',
-                _flatData?['flatNumber'] ?? widget.user?.flatNumber ?? 'N/A',
-                Icons.tag,
-              ),
-              _buildFlatDetailItem(
-                'Floor',
-                '${_flatData?['floorNumber'] ?? widget.user?.floorNumber ?? 'N/A'}',
-                Icons.layers,
-              ),
-              _buildFlatDetailItem(
-                'Wing / Block',
-                widget.user?.wing ?? _buildingData?['wing'] ?? 'N/A',
-                Icons.apartment,
-              ),
-              _buildFlatDetailItem(
-                'Flat Type',
-                _flatData?['flatType'] ?? widget.user?.flatType ?? 'N/A',
-                Icons.category,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFlatDetailItem(String label, String value, IconData icon) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 16, color: AppColors.textSecondary),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSecuritySection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Security & Account',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            children: [
-              ListTile(
-                leading: Icon(Icons.lock_outline, color: AppColors.primary),
-                title: const Text('Change Password'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _showChangePasswordDialog,
-              ),
-              const Divider(height: 1),
-              ListTile(
-                leading: Icon(Icons.logout, color: AppColors.error),
-                title: const Text('Logout'),
-                titleTextStyle: TextStyle(color: AppColors.error),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _handleLogout,
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 

@@ -1,17 +1,11 @@
 import '../../../core/imports/app_imports.dart';
-import '../auth/role_selection_screen.dart';
-import 'create_building_screen.dart';
-import 'create_building_comprehensive_screen.dart';
 import 'create_apartment_flow_screen.dart';
 import 'create_user_screen.dart';
 import 'create_staff_screen.dart';
-import 'building_details_screen.dart';
-import 'building_view_3d_screen.dart';
-import 'bulk_resident_management_screen.dart';
 import 'users_management_screen.dart';
 import 'complaints_management_screen.dart'
-    show ComplaintsManagementScreen, ComplaintsManagementScreenState;
-import 'settings_screen.dart';
+    show ComplaintsManagementScreen;
+import 'invoice_management_screen.dart';
 import 'no_building_screen.dart';
 import '../home/tabs/news_tab_screen.dart';
 import '../profile/profile_screen.dart';
@@ -34,8 +28,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<Map<String, dynamic>> _allBuildings = [];
   String? _selectedBuildingCode;
   bool _isLoading = true;
-  final GlobalKey<State<ComplaintsManagementScreen>> _complaintsKey =
-      GlobalKey();
 
   @override
   void initState() {
@@ -311,131 +303,167 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       return const NoBuildingScreen();
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Building Info Card
-          Card(
-            color: AppColors.primary.withOpacity(0.1),
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+    // Extract data with safe defaults
+    final dashboardStats = _dashboardData ?? {};
+    final buildingStats = dashboardStats['building'] ?? {};
+    final residentsData = dashboardStats['residents'] ?? {};
+    final staffData = dashboardStats['staff'] ?? {};
+    
+    // Get current building info
+    final currentBuilding = _selectedBuildingCode != null && _allBuildings.isNotEmpty
+        ? _allBuildings.firstWhere(
+            (b) => b['code'] == _selectedBuildingCode,
+            orElse: () => <String, dynamic>{},
+          )
+        : _buildingData;
+    
+    final buildingName = currentBuilding?['name'] ?? _buildingData?['name'] ?? 'No Building Selected';
+    final buildingCode = currentBuilding?['code'] ?? _buildingData?['code'] ?? 'N/A';
+    
+    // Calculate statistics
+    final totalBuildings = _allBuildings.length;
+    final activeBuildings = _allBuildings.where((b) => b['status'] == 'active' || b['isActive'] == true).length;
+    final pendingApprovals = dashboardStats['pendingApprovals'] ?? 0;
+    final totalResidents = residentsData['total'] ?? 0;
+    final totalStaff = staffData['total'] ?? 0;
+    final totalUsers = totalResidents + totalStaff;
+    final totalProperties = buildingStats['totalFlats'] ?? 0;
+    final totalComplaints = dashboardStats['totalComplaints'] ?? 0;
+    final resolvedComplaints = dashboardStats['resolvedComplaints'] ?? 0;
+    final occupiedFlats = buildingStats['occupiedFlats'] ?? 0;
+    final vacantFlats = buildingStats['vacantFlats'] ?? 0;
+    
+    return RefreshIndicator(
+      onRefresh: _loadDashboardData,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 8),
+            
+            // Current Building Info Card
+            _CurrentBuildingCard(
+              buildingName: buildingName,
+              buildingCode: buildingCode,
+              totalFlats: totalProperties,
+              occupiedFlats: occupiedFlats,
+              vacantFlats: vacantFlats,
+              allBuildings: _allBuildings,
+              selectedBuildingCode: _selectedBuildingCode,
+              onBuildingChanged: (code) {
+                _saveSelectedBuilding(code);
+                _loadDashboardData();
+              },
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.apartment,
-                      color: AppColors.textOnPrimary,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _buildingData!['name'] ?? 'Building',
-                          style: Theme.of(context).textTheme.headlineMedium
-                              ?.copyWith(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.bold,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Code: ${_buildingData!['code'] ?? 'N/A'}',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: AppColors.textSecondary),
-                        ),
-                        if (_buildingData!['statistics'] != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            '${_buildingData!['statistics']['occupiedFlats'] ?? 0}/${_buildingData!['statistics']['totalFlats'] ?? 0} Flats Occupied',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: AppColors.textSecondary),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.info_outline),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const BuildingDetailsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Building Statistics
-          if (_dashboardData?['building'] != null) ...[
-            Text(
-              'Building Statistics',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
+            const SizedBox(height: 24),
+            
+            // Building Statistics Section
+            _SectionHeader(
+              title: 'Building Statistics',
+              icon: Icons.apartment,
             ),
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: _StatCard(
-                    title: 'Total Flats',
-                    value: '${_dashboardData!['building']['totalFlats'] ?? 0}',
+                  child: _ModernStatCard(
+                    title: 'Total Buildings',
+                    value: '$totalBuildings',
+                    icon: Icons.business,
+                    iconColor: AppColors.primary,
+                    backgroundColor: AppColors.primary.withOpacity(0.08),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ModernStatCard(
+                    title: 'Active Buildings',
+                    value: '$activeBuildings',
+                    icon: Icons.check_circle_outline,
+                    iconColor: AppColors.success,
+                    backgroundColor: AppColors.success.withOpacity(0.08),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _ModernStatCard(
+              title: 'Pending Approvals',
+              value: '$pendingApprovals',
+              icon: Icons.pending_actions,
+              iconColor: AppColors.warning,
+              backgroundColor: AppColors.warning.withOpacity(0.08),
+              isFullWidth: true,
+            ),
+            const SizedBox(height: 24),
+            
+            // User & Staff Statistics Section
+            _SectionHeader(
+              title: 'User & Staff Statistics',
+              icon: Icons.people_outline,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _ModernStatCard(
+                    title: 'Residents',
+                    value: '$totalResidents',
                     icon: Icons.home,
-                    color: AppColors.primary,
+                    iconColor: AppColors.primary,
+                    backgroundColor: AppColors.primary.withOpacity(0.08),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _StatCard(
-                    title: 'Occupied',
-                    value:
-                        '${_dashboardData!['building']['occupiedFlats'] ?? 0}',
-                    icon: Icons.person,
-                    color: AppColors.success,
+                  child: _ModernStatCard(
+                    title: 'Staff',
+                    value: '$totalStaff',
+                    icon: Icons.work_outline,
+                    iconColor: AppColors.secondary,
+                    backgroundColor: AppColors.secondary.withOpacity(0.08),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
+            _ModernStatCard(
+              title: 'Total Users',
+              value: '$totalUsers',
+              icon: Icons.people,
+              iconColor: AppColors.info,
+              backgroundColor: AppColors.info.withOpacity(0.08),
+              isFullWidth: true,
+            ),
+            const SizedBox(height: 24),
+            
+            // Platform Statistics Section
+            _SectionHeader(
+              title: 'Platform Statistics',
+              icon: Icons.analytics_outlined,
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: _StatCard(
-                    title: 'Vacant',
-                    value: '${_dashboardData!['building']['vacantFlats'] ?? 0}',
+                  child: _ModernStatCard(
+                    title: 'Total Properties',
+                    value: '$totalProperties',
                     icon: Icons.home_outlined,
-                    color: AppColors.warning,
+                    iconColor: AppColors.primary,
+                    backgroundColor: AppColors.primary.withOpacity(0.08),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _StatCard(
-                    title: 'Occupancy Rate',
-                    value:
-                        '${_dashboardData!['building']['occupancyRate']?.toStringAsFixed(1) ?? '0'}%',
-                    icon: Icons.trending_up,
-                    color: AppColors.info,
+                  child: _ModernStatCard(
+                    title: 'Total Reports',
+                    value: '$totalComplaints',
+                    icon: Icons.description_outlined,
+                    iconColor: AppColors.error,
+                    backgroundColor: AppColors.error.withOpacity(0.08),
                   ),
                 ),
               ],
@@ -444,198 +472,321 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             Row(
               children: [
                 Expanded(
-                  child: _StatCard(
-                    title: 'Total Residents',
-                    value: '${_dashboardData!['residents']['total'] ?? 0}',
-                    icon: Icons.people,
-                    color: AppColors.primary,
+                  child: _ModernStatCard(
+                    title: 'Resolved Reports',
+                    value: '$resolvedComplaints',
+                    icon: Icons.check_circle,
+                    iconColor: AppColors.success,
+                    backgroundColor: AppColors.success.withOpacity(0.08),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _StatCard(
-                    title: 'Total Staff',
-                    value: '${_dashboardData!['staff']['total'] ?? 0}',
-                    icon: Icons.work,
-                    color: AppColors.secondary,
+                  child: _ModernStatCard(
+                    title: 'Occupied Flats',
+                    value: '$occupiedFlats',
+                    icon: Icons.home,
+                    iconColor: AppColors.success,
+                    backgroundColor: AppColors.success.withOpacity(0.08),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 24),
+            
+            // Quick Actions Section
+            _SectionHeader(
+              title: 'Quick Actions',
+              icon: Icons.flash_on,
+            ),
+            const SizedBox(height: 16),
+            _QuickActionButton(
+              title: 'Add Building',
+              icon: Icons.add_business,
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CreateApartmentFlowScreen(),
+                  ),
+                );
+                if (mounted) await _loadDashboardData();
+              },
+            ),
+            const SizedBox(height: 12),
+            _QuickActionButton(
+              title: 'Create Resident',
+              icon: Icons.person_add,
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CreateUserScreen(),
+                  ),
+                );
+                if (mounted) await _loadDashboardData();
+              },
+            ),
+            const SizedBox(height: 12),
+            _QuickActionButton(
+              title: 'Create Staff',
+              icon: Icons.badge,
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CreateStaffScreen(),
+                  ),
+                );
+                if (mounted) await _loadDashboardData();
+              },
+            ),
+            const SizedBox(height: 12),
+            _QuickActionButton(
+              title: 'Manage Users',
+              icon: Icons.people,
+              onTap: () {
+                setState(() => _currentIndex = 1);
+              },
+            ),
+            const SizedBox(height: 12),
+            _QuickActionButton(
+              title: 'Approve Requests',
+              icon: Icons.verified,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ComplaintsManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _QuickActionButton(
+              title: 'View Reports',
+              icon: Icons.assessment,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ComplaintsManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _QuickActionButton(
+              title: 'Invoice Management',
+              icon: Icons.receipt_long,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const InvoiceManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 32),
           ],
-          // Complaint Statistics
-          Text(
-            'Complaint Statistics',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
+        ),
+      ),
+    );
+  }
+}
+
+// Current Building Card - Shows which building is currently selected
+class _CurrentBuildingCard extends StatelessWidget {
+  final String buildingName;
+  final String buildingCode;
+  final int totalFlats;
+  final int occupiedFlats;
+  final int vacantFlats;
+  final List<Map<String, dynamic>> allBuildings;
+  final String? selectedBuildingCode;
+  final Function(String?) onBuildingChanged;
+
+  const _CurrentBuildingCard({
+    required this.buildingName,
+    required this.buildingCode,
+    required this.totalFlats,
+    required this.occupiedFlats,
+    required this.vacantFlats,
+    required this.allBuildings,
+    required this.selectedBuildingCode,
+    required this.onBuildingChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary.withOpacity(0.1),
+            AppColors.primary.withOpacity(0.05),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.primary.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-          const SizedBox(height: 12),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
             children: [
-              Expanded(
-                child: _StatCard(
-                  title: 'Pending Approvals',
-                  value: '${_dashboardData!['pendingApprovals'] ?? 0}',
-                  icon: Icons.pending_actions,
-                  color: AppColors.warning,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _StatCard(
-                  title: 'Active Complaints',
-                  value: '${_dashboardData!['activeComplaints'] ?? 0}',
-                  icon: Icons.report_problem,
-                  color: AppColors.error,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _StatCard(
-                  title: 'Total Complaints',
-                  value: '${_dashboardData!['totalComplaints'] ?? 0}',
-                  icon: Icons.description,
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
                   color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.apartment,
+                  color: Colors.white,
+                  size: 24,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 16),
               Expanded(
-                child: _StatCard(
-                  title: 'Resolved',
-                  value: '${_dashboardData!['resolvedComplaints'] ?? 0}',
-                  icon: Icons.check_circle,
-                  color: AppColors.success,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          // Quick Actions
-          Text(
-            'Quick Actions',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.5,
-            children: [
-              _ActionCard(
-                title: 'Create Building',
-                icon: Icons.apartment,
-                color: AppColors.primary,
-                onTap: () async {
-                  print('🖱️ [FLUTTER] Create Building button clicked');
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateApartmentFlowScreen(),
-                    ),
-                  );
-                  // Refresh dashboard data after creation while preserving current tab
-                  if (mounted) {
-                    await _loadDashboardData();
-                  }
-                },
-              ),
-              _ActionCard(
-                title: 'Building Details',
-                icon: Icons.info,
-                color: AppColors.info,
-                onTap: () {
-                  print('🖱️ [FLUTTER] Building Details button clicked');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const BuildingDetailsScreen(),
-                    ),
-                  );
-                },
-              ),
-              _ActionCard(
-                title: 'Resident Management',
-                icon: Icons.people,
-                color: AppColors.primary,
-                onTap: () {
-                  print('🖱️ [FLUTTER] Resident Management button clicked');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const BulkResidentManagementScreen(),
-                    ),
-                  );
-                },
-              ),
-              _ActionCard(
-                title: '3D Building View',
-                icon: Icons.view_in_ar,
-                color: AppColors.info,
-                onTap: () {
-                  print('🖱️ [FLUTTER] 3D Building View button clicked');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => BuildingView3DScreen(
-                        buildingCode: _selectedBuildingCode,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Current Building',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                  );
-                },
-              ),
-              _ActionCard(
-                title: 'Create User',
-                icon: Icons.person_add,
-                color: AppColors.success,
-                onTap: () {
-                  print('🖱️ [FLUTTER] Create User button clicked');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const CreateUserScreen()),
-                  );
-                },
-              ),
-              _ActionCard(
-                title: 'Create Staff',
-                icon: Icons.badge,
-                color: AppColors.warning,
-                onTap: () async {
-                  print('🖱️ [FLUTTER] Create Staff button clicked');
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateStaffScreen(),
+                    const SizedBox(height: 4),
+                    Text(
+                      buildingName,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.5,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  );
-                  // Refresh dashboard data after creation while preserving current tab
-                  if (mounted) {
-                    await _loadDashboardData();
-                  }
-                },
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.qr_code,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Code: $buildingCode',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              _ActionCard(
-                title: 'View All Users',
-                icon: Icons.people,
-                color: AppColors.secondary,
-                onTap: () {
-                  print('🖱️ [FLUTTER] View All Users button clicked');
-                  setState(() => _currentIndex = 1);
-                },
-              ),
+              // Building Selector Dropdown (if multiple buildings)
+              if (allBuildings.length > 1)
+                PopupMenuButton<String>(
+                  icon: Icon(
+                    Icons.arrow_drop_down,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
+                  onSelected: onBuildingChanged,
+                  itemBuilder: (context) => allBuildings.map((building) {
+                    final code = building['code'] ?? '';
+                    final name = building['name'] ?? code;
+                    final isSelected = code == selectedBuildingCode;
+                    return PopupMenuItem<String>(
+                      value: code,
+                      child: Row(
+                        children: [
+                          Icon(
+                            isSelected ? Icons.check_circle : Icons.circle_outlined,
+                            size: 20,
+                            color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: TextStyle(
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
             ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _BuildingStatItem(
+                  label: 'Total Flats',
+                  value: '$totalFlats',
+                  icon: Icons.home_outlined,
+                  color: AppColors.primary,
+                ),
+                Container(
+                  width: 1,
+                  height: 40,
+                  color: AppColors.border,
+                ),
+                _BuildingStatItem(
+                  label: 'Occupied',
+                  value: '$occupiedFlats',
+                  icon: Icons.check_circle_outline,
+                  color: AppColors.success,
+                ),
+                Container(
+                  width: 1,
+                  height: 40,
+                  color: AppColors.border,
+                ),
+                _BuildingStatItem(
+                  label: 'Vacant',
+                  value: '$vacantFlats',
+                  icon: Icons.home_outlined,
+                  color: AppColors.warning,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -643,14 +794,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final String title;
+// Building Stat Item for Current Building Card
+class _BuildingStatItem extends StatelessWidget {
+  final String label;
   final String value;
   final IconData icon;
   final Color color;
 
-  const _StatCard({
-    required this.title,
+  const _BuildingStatItem({
+    required this.label,
     required this.value,
     required this.icon,
     required this.color,
@@ -658,45 +810,151 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: color,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Modern Section Header
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final IconData icon;
+
+  const _SectionHeader({
+    required this.title,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+            letterSpacing: -0.5,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Modern Stat Card - Clean, minimal design
+class _ModernStatCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color iconColor;
+  final Color backgroundColor;
+  final bool isFullWidth;
+
+  const _ModernStatCard({
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.iconColor,
+    required this.backgroundColor,
+    this.isFullWidth = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: AppColors.border.withOpacity(0.1),
-            spreadRadius: 1,
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: color, size: 28),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: color,
+            child: Icon(
+              icon,
+              color: iconColor,
+              size: 24,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: iconColor,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -704,16 +962,15 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _ActionCard extends StatelessWidget {
+// Modern Quick Action Button - Rounded, prominent design
+class _QuickActionButton extends StatelessWidget {
   final String title;
   final IconData icon;
-  final Color color;
   final VoidCallback onTap;
 
-  const _ActionCard({
+  const _QuickActionButton({
     required this.title,
     required this.icon,
-    required this.color,
     required this.onTap,
   });
 
@@ -723,31 +980,49 @@ class _ActionCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: color, size: 28),
+              child: Icon(
+                icon,
+                color: AppColors.primary,
+                size: 24,
+              ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: color,
-                fontWeight: FontWeight.bold,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.3,
+                ),
               ),
-              textAlign: TextAlign.center,
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              size: 16,
+              color: AppColors.textSecondary.withOpacity(0.5),
             ),
           ],
         ),

@@ -61,6 +61,7 @@ dependencies:
   shimmer: ^3.0.0
   google_fonts: ^6.1.0
   flutter_screenutil: ^5.9.0
+  font_awesome_flutter: ^10.7.0
   
   # Utils
   intl: ^0.18.1
@@ -95,6 +96,13 @@ dependencies:
   
   # Share functionality
   share_plus: ^7.2.1
+
+  # Excel Export
+  excel: ^4.0.3
+
+  # PDF Export
+  pdf: ^3.11.0
+  printing: ^5.12.0
 
 dev_dependencies:
   flutter_test:

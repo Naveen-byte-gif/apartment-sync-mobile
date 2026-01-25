@@ -70,6 +70,9 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
   // Building Configuration
   final _totalFloorsController = TextEditingController(text: '5');
   final _flatsPerFloorController = TextEditingController(text: '4');
+  final _totalFlatsController = TextEditingController();
+  bool _useVariableFlatsPerFloor = false;
+  final Map<int, int> _flatsPerFloorMap = {};
   
   bool _isLoading = false;
   
@@ -108,6 +111,7 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
     _parkingSlotsController.dispose();
     _totalFloorsController.dispose();
     _flatsPerFloorController.dispose();
+    _totalFlatsController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -134,17 +138,66 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
       return;
     }
     
-    final totalFloors = int.tryParse(_totalFloorsController.text) ?? 5;
-    final flatsPerFloor = int.tryParse(_flatsPerFloorController.text) ?? 4;
-    
-    if (totalFloors < 1 || totalFloors > 100) {
-      AppMessageHandler.showError(context, 'Total floors must be between 1 and 100');
-      return;
-    }
-    
-    if (flatsPerFloor < 1 || flatsPerFloor > 50) {
-      AppMessageHandler.showError(context, 'Flats per floor must be between 1 and 50');
-      return;
+    int totalFloors;
+    Map<String, dynamic> buildingConfig = {};
+
+    if (_useVariableFlatsPerFloor) {
+      // Variable flats per floor mode
+      totalFloors = int.tryParse(_totalFloorsController.text) ?? 0;
+      if (totalFloors < 1 || totalFloors > 100) {
+        AppMessageHandler.showError(context, 'Total floors must be between 1 and 100');
+        return;
+      }
+
+      final totalFlats = int.tryParse(_totalFlatsController.text);
+      if (totalFlats == null || totalFlats < 1) {
+        AppMessageHandler.showError(context, 'Please enter valid total flats');
+        return;
+      }
+
+      List<int> flatsPerFloorList = [];
+      int calculatedTotal = 0;
+      for (int floorNum = 1; floorNum <= totalFloors; floorNum++) {
+        final flatsCount = _flatsPerFloorMap[floorNum] ?? 0;
+        if (flatsCount < 1 || flatsCount > 50) {
+          AppMessageHandler.showError(context, 'Floor $floorNum: Flats must be between 1 and 50');
+          return;
+        }
+        flatsPerFloorList.add(flatsCount);
+        calculatedTotal += flatsCount;
+      }
+
+      if (calculatedTotal != totalFlats) {
+        AppMessageHandler.showError(
+          context,
+          'Sum of flats per floor ($calculatedTotal) must equal total flats ($totalFlats)'
+        );
+        return;
+      }
+
+      buildingConfig = {
+        'totalFlats': totalFlats,
+        'flatsPerFloorList': flatsPerFloorList,
+      };
+    } else {
+      // Uniform mode
+      totalFloors = int.tryParse(_totalFloorsController.text) ?? 5;
+      final flatsPerFloor = int.tryParse(_flatsPerFloorController.text) ?? 4;
+      
+      if (totalFloors < 1 || totalFloors > 100) {
+        AppMessageHandler.showError(context, 'Total floors must be between 1 and 100');
+        return;
+      }
+      
+      if (flatsPerFloor < 1 || flatsPerFloor > 50) {
+        AppMessageHandler.showError(context, 'Flats per floor must be between 1 and 50');
+        return;
+      }
+
+      buildingConfig = {
+        'totalFloors': totalFloors,
+        'flatsPerFloor': flatsPerFloor,
+      };
     }
     
     setState(() => _isLoading = true);
@@ -155,8 +208,7 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
         'code': _codeController.text.trim().toUpperCase(),
         'buildingCategory': _buildingCategory,
         'buildingType': _buildingType,
-        'totalFloors': totalFloors,
-        'flatsPerFloor': flatsPerFloor,
+        ...buildingConfig,
         'address': {
           'street': _streetController.text.trim(),
           'city': _cityController.text.trim(),
@@ -747,52 +799,295 @@ class _CreateBuildingComprehensiveScreenState extends State<CreateBuildingCompre
               
               const SizedBox(height: 16),
               
-              // Building Configuration - Simplified
+              // Building Configuration
               _buildSectionCard(
                 title: '🏢 Building Configuration',
                 icon: Icons.layers,
                 children: [
+                  // Toggle for variable flats per floor
                   Row(
                     children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _totalFloorsController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Total Floors *',
-                            prefixIcon: Icon(Icons.layers),
-                            border: OutlineInputBorder(),
-                            helperText: 'Number of floors in building',
+                      const Expanded(
+                        child: Text(
+                          'Variable Flats per Floor',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
                           ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) return 'Required';
-                            final num = int.tryParse(value);
-                            if (num == null || num < 1 || num > 100) return '1-100';
-                            return null;
-                          },
                         ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _flatsPerFloorController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Flats per Floor *',
-                            prefixIcon: Icon(Icons.home),
-                            border: OutlineInputBorder(),
-                            helperText: 'Flats on each floor',
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) return 'Required';
-                            final num = int.tryParse(value);
-                            if (num == null || num < 1 || num > 50) return '1-50';
-                            return null;
-                          },
-                        ),
+                      Switch(
+                        value: _useVariableFlatsPerFloor,
+                        onChanged: (value) {
+                          setState(() {
+                            _useVariableFlatsPerFloor = value;
+                            if (value) {
+                              final totalFloors = int.tryParse(_totalFloorsController.text) ?? 5;
+                              for (int i = 1; i <= totalFloors; i++) {
+                                _flatsPerFloorMap[i] = _flatsPerFloorMap[i] ?? 2;
+                              }
+                            }
+                          });
+                        },
+                        activeColor: AppColors.primary,
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
+                  if (_useVariableFlatsPerFloor) ...[
+                    // Variable mode
+                    TextFormField(
+                      controller: _totalFlatsController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Total Flats *',
+                        hintText: 'e.g., 6',
+                        prefixIcon: Icon(Icons.home_work),
+                        border: OutlineInputBorder(),
+                        helperText: 'Total number of flats across all floors',
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      validator: (value) {
+                        if (_useVariableFlatsPerFloor) {
+                          if (value == null || value.isEmpty) return 'Required';
+                          final num = int.tryParse(value);
+                          if (num == null || num < 1) return 'Must be > 0';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Builder(
+                      builder: (context) {
+                        final totalFloors = int.tryParse(_totalFloorsController.text) ?? 5;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Configure Flats per Floor:',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            ...List.generate(totalFloors, (index) {
+                              final floorNum = index + 1;
+                              final currentCount = _flatsPerFloorMap[floorNum] ?? 2;
+                              
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 80,
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        'Floor $floorNum',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.remove_circle_outline),
+                                            onPressed: () {
+                                              if (currentCount > 1) {
+                                                setState(() {
+                                                  _flatsPerFloorMap[floorNum] = currentCount - 1;
+                                                });
+                                              }
+                                            },
+                                            color: AppColors.primary,
+                                          ),
+                                          Container(
+                                            width: 60,
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            decoration: BoxDecoration(
+                                              border: Border.all(color: AppColors.border),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              '$currentCount',
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.add_circle_outline),
+                                            onPressed: () {
+                                              if (currentCount < 50) {
+                                                setState(() {
+                                                  _flatsPerFloorMap[floorNum] = currentCount + 1;
+                                                });
+                                              }
+                                            },
+                                            color: AppColors.primary,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 12),
+                            Builder(
+                              builder: (context) {
+                                final calculatedTotal = _flatsPerFloorMap.values.fold(0, (sum, count) => sum + count);
+                                final totalFlats = int.tryParse(_totalFlatsController.text) ?? 0;
+                                return Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: calculatedTotal == totalFlats && totalFlats > 0
+                                        ? AppColors.success.withOpacity(0.1)
+                                        : AppColors.warning.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: calculatedTotal == totalFlats && totalFlats > 0
+                                          ? AppColors.success.withOpacity(0.3)
+                                          : AppColors.warning.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        calculatedTotal == totalFlats && totalFlats > 0
+                                            ? Icons.check_circle
+                                            : Icons.info_outline,
+                                        color: calculatedTotal == totalFlats && totalFlats > 0
+                                            ? AppColors.success
+                                            : AppColors.warning,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Sum: $calculatedTotal / Total: $totalFlats',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: calculatedTotal == totalFlats && totalFlats > 0
+                                                ? AppColors.success
+                                                : AppColors.warning,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ] else ...[
+                    // Uniform mode
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _totalFloorsController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Total Floors *',
+                              prefixIcon: Icon(Icons.layers),
+                              border: OutlineInputBorder(),
+                              helperText: 'Number of floors in building',
+                            ),
+                            validator: (value) {
+                              if (!_useVariableFlatsPerFloor) {
+                                if (value == null || value.isEmpty) return 'Required';
+                                final num = int.tryParse(value);
+                                if (num == null || num < 1 || num > 100) return '1-100';
+                              } else {
+                                // Update floors map when total floors changes in variable mode
+                                final num = int.tryParse(value ?? '0') ?? 0;
+                                if (num > 0) {
+                                  setState(() {
+                                    // Add new floors with default 2 flats
+                                    for (int i = _flatsPerFloorMap.keys.length + 1; i <= num; i++) {
+                                      if (!_flatsPerFloorMap.containsKey(i)) {
+                                        _flatsPerFloorMap[i] = 2;
+                                      }
+                                    }
+                                    // Remove floors beyond new total
+                                    _flatsPerFloorMap.removeWhere((key, value) => key > num);
+                                  });
+                                }
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _flatsPerFloorController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Flats per Floor *',
+                              prefixIcon: Icon(Icons.home),
+                              border: OutlineInputBorder(),
+                              helperText: 'Flats on each floor',
+                            ),
+                            validator: (value) {
+                              if (!_useVariableFlatsPerFloor) {
+                                if (value == null || value.isEmpty) return 'Required';
+                                final num = int.tryParse(value);
+                                if (num == null || num < 1 || num > 50) return '1-50';
+                              }
+                              return null;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Builder(
+                      builder: (context) {
+                        final totalFloors = int.tryParse(_totalFloorsController.text) ?? 5;
+                        final flatsPerFloor = int.tryParse(_flatsPerFloorController.text) ?? 4;
+                        final totalFlats = totalFloors * flatsPerFloor;
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.info.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.calculate, color: AppColors.info, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Total Flats: $totalFlats',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.info,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(16),

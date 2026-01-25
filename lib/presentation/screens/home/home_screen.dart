@@ -34,13 +34,30 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // Get AppBar title based on current tab
+  String _getAppBarTitle() {
+    switch (_currentIndex) {
+      case 0:
+        return 'Home';
+      case 1:
+        return 'News';
+      case 2:
+        return 'Payments';
+      case 3:
+        return 'Chat';
+      case 4:
+        return 'Profile';
+      default:
+        return 'Home';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: AppSidebarBuilder.buildResidentSidebar(context: context),
       appBar: AppBar(
-        title: const Text('Home'),
+        title: Text(_getAppBarTitle()),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         automaticallyImplyLeading: false,

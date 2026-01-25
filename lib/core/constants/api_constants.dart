@@ -1,12 +1,12 @@
 class ApiConstants {
   // Base URL - Update this with your backend URL
-  static const String baseUrl = 'http://192.168.1.15:6500/api';
+  static const String baseUrl = 'http://192.168.0.105:6500/api';
 
   // ------------- AWS URL--------------
   // static const String baseUrl = 'http://13.60.226.11:6500/api';
   // static const String baseUrl = 'https://apartment-sync-backend.onrender.com/api';
   // Socket.IO
-  static const String socketUrl = 'http://192.168.1.15:6500';
+  static const String socketUrl = 'http://192.168.0.105:6500';
 
   // ------------- AWS URL--------------
   // static const String socketUrl = 'http://13.60.226.11:6500';
@@ -16,7 +16,8 @@ class ApiConstants {
   static const String sendOTP = '/auth/send-otp';
   static const String verifyOTPRegister = '/auth/verify-otp-register';
   static const String verifyOTPLogin = '/auth/verify-otp-login';
-  static const String verifyOTPResetPassword = '/auth/verify-otp-reset-password';
+  static const String verifyOTPResetPassword =
+      '/auth/verify-otp-reset-password';
   static const String passwordLogin = '/auth/password-login';
   static const String adminLogin = '/auth/admin/login';
   static const String adminRegister = '/auth/admin/register';
@@ -28,6 +29,7 @@ class ApiConstants {
   static const String users = '/users';
   static const String buildingDetails = '/users/building-details';
   static const String announcements = '/users/announcements';
+  static const String changePassword = '/users/change-password';
 
   // Complaint Endpoints
   static const String complaints = '/complaints';
@@ -47,6 +49,22 @@ class ApiConstants {
 
   // Payment Endpoints
   static const String payments = '/payments';
+  static const String myInvoices = '/payments/invoices';
+  static String invoiceById(String id) => '/payments/invoices/$id';
+  static const String createPayment = '/payments/create';
+  static const String createPaymentByPhone = '/payments/create-by-phone';
+  static String confirmPayment(String id) => '/payments/$id/confirm';
+  static String verifyPayment(String id) => '/payments/$id/verify';
+  static const String paymentStats = '/payments/stats';
+
+  // Invoice Endpoints
+  static const String invoices = '/invoices';
+  static String invoicePdf(String id) => '/invoices/$id/pdf';
+  static const String invoiceStats = '/invoices/stats';
+
+  // UPI Config Endpoints
+  static const String upiConfig = '/upi-config';
+  static const String publicUpiConfig = '/upi-config/public';
 
   // Admin Endpoints
   static const String adminDashboard = '/admin/dashboard';
@@ -59,6 +77,9 @@ class ApiConstants {
   static const String adminAvailableFlats = '/admin/available-flats';
   static const String adminResidents = '/admin/residents';
   static const String adminResidentsBulkAction = '/admin/residents/bulk-action';
+  static const String adminCommunityChat = '/admin/chats/community';
+  static const String adminChatableUsers = '/admin/chats/chatable-users';
+  static const String adminP2PChats = '/admin/chats/p2p';
 
   // Helper method to get flat details endpoint
   static String getFlatDetails(
@@ -73,6 +94,12 @@ class ApiConstants {
   static const String staffDashboard = '/staff/dashboard';
   static const String staffBuildings = '/staff/buildings';
   static const String staffBuildingDetails = '/staff/building-details';
+  static const String staffUsers = '/staff/users';
+  static const String staffComplaints = '/staff/complaints';
+  static const String staffVisitors = '/staff/visitors';
+  static const String staffAssignedComplaints = '/staff/assigned-complaints';
+  static const String staffAvailability = '/staff/availability';
+  static const String staffSpecialization = '/staff/specialization';
 
   // Visitor Endpoints
   static const String visitors = '/visitors';
@@ -111,8 +138,7 @@ class ApiConstants {
         .toString();
   }
 
-  // Staff Endpoints (additional)
-  static const String staffAssignedComplaints = '/staff/assigned-complaints';
+  // Admin Staff Management Endpoints
   static const String adminStaff = '/admin/staff';
   static const String adminStaffOnboard = '/admin/staff/onboard';
   static String adminStaffVerifyIdentity(String staffId) =>

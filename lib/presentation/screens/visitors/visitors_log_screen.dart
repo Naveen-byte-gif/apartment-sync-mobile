@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../../core/imports/app_imports.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/services/visitor_export_service.dart';
+import '../../../core/services/visitor_filter_service.dart';
 import '../../../core/constants/api_constants.dart';
 import 'dart:convert';
 import 'new_visitor_entry_screen.dart';
 import 'visitor_detail_screen.dart';
+import 'visitor_dashboard_screen.dart';
 
 class VisitorsLogScreen extends StatefulWidget {
   const VisitorsLogScreen({super.key});
@@ -13,17 +17,54 @@ class VisitorsLogScreen extends StatefulWidget {
   State<VisitorsLogScreen> createState() => _VisitorsLogScreenState();
 }
 
-class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
+class _VisitorsLogScreenState extends State<VisitorsLogScreen>
+    with AutomaticKeepAliveClientMixin {
   List<Map<String, dynamic>> _visitors = [];
   List<Map<String, dynamic>> _filteredVisitors = [];
   bool _isLoading = true;
   String _searchQuery = '';
   Map<String, dynamic>? _user;
+  int _currentIndex = 1; // 0 = Dashboard, 1 = Visitor Log
+  
+  // Keep alive to preserve state
+  @override
+  bool get wantKeepAlive => true;
+
+  // Advanced Filters
+  String? _selectedStatus;
+  String? _selectedBuilding;
+  String? _selectedVisitorType;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  List<String> _availableBuildings = [];
+  List<String> _availableVisitorTypes = [
+    'All',
+    'Guest',
+    'Delivery',
+    'Vendor',
+    'Cab / Ride',
+    'Domestic Help',
+    'Realtor / Sales',
+    'Emergency Services',
+  ];
+  List<String> _availableStatuses = [
+    'All',
+    'Pending',
+    'Pre-Approved',
+    'Checked In',
+    'Checked Out',
+    'Rejected',
+    'Cancelled',
+  ];
+
+  // Constants for filter values
+  static const String _allFilterValue = 'All';
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadAvailableBuildings();
     _loadVisitors();
     _setupSocketListeners();
   }
@@ -41,6 +82,31 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
     }
   }
 
+  void _loadAvailableBuildings() {
+    final userJson = StorageService.getString(AppConstants.userKey);
+    if (userJson != null) {
+      try {
+        final userData = jsonDecode(userJson);
+        final userRole = userData['role'] ?? 'resident';
+
+        if (userRole == 'resident') {
+          // For residents, don't show building filter - they only see their flat visitors
+          setState(() {
+            _availableBuildings = [];
+            _selectedBuilding = null;
+          });
+        } else {
+          setState(() {
+            _availableBuildings = [_allFilterValue];
+            _selectedBuilding = _allFilterValue;
+          });
+        }
+      } catch (e) {
+        print('Error loading buildings: $e');
+      }
+    }
+  }
+
   void _setupSocketListeners() {
     final socketService = SocketService();
     final userJson = StorageService.getString(AppConstants.userKey);
@@ -51,16 +117,38 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
         if (userId != null) {
           socketService.connect(userId);
 
+          // Remove old listeners to prevent duplicates
+          socketService.off('visitor_created');
+          socketService.off('visitor_checked_in');
+          socketService.off('visitor_checked_out');
+          socketService.off('visitor_status_updated');
+
           socketService.on('visitor_created', (data) {
-            if (mounted) _loadVisitors();
+            print('🔔 [SOCKET] Visitor created event received');
+            if (mounted) {
+              _loadVisitors();
+            }
           });
 
           socketService.on('visitor_checked_in', (data) {
-            if (mounted) _loadVisitors();
+            print('🔔 [SOCKET] Visitor checked in event received');
+            if (mounted) {
+              _loadVisitors();
+            }
           });
 
           socketService.on('visitor_checked_out', (data) {
-            if (mounted) _loadVisitors();
+            print('🔔 [SOCKET] Visitor checked out event received');
+            if (mounted) {
+              _loadVisitors();
+            }
+          });
+
+          socketService.on('visitor_status_updated', (data) {
+            print('🔔 [SOCKET] Visitor status updated event received');
+            if (mounted) {
+              _loadVisitors();
+            }
           });
         }
       } catch (e) {
@@ -69,10 +157,42 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    // Clean up socket listeners
+    final socketService = SocketService();
+    socketService.off('visitor_created');
+    socketService.off('visitor_checked_in');
+    socketService.off('visitor_checked_out');
+    socketService.off('visitor_status_updated');
+    super.dispose();
+  }
+
   Future<void> _loadVisitors() async {
     setState(() => _isLoading = true);
     try {
-      final response = await ApiService.get(ApiConstants.visitors);
+      // Build query with filters
+      String url = ApiConstants.visitors;
+      List<String> queryParams = [];
+
+      if (_selectedStatus != null && _selectedStatus != 'All') {
+        queryParams.add('status=${Uri.encodeComponent(_selectedStatus!)}');
+      }
+      if (_selectedBuilding != null && _selectedBuilding != 'All') {
+        queryParams.add('building=${Uri.encodeComponent(_selectedBuilding!)}');
+      }
+      if (_startDate != null) {
+        queryParams.add('startDate=${_startDate!.toIso8601String()}');
+      }
+      if (_endDate != null) {
+        queryParams.add('endDate=${_endDate!.toIso8601String()}');
+      }
+
+      if (queryParams.isNotEmpty) {
+        url += '?${queryParams.join('&')}';
+      }
+
+      final response = await ApiService.get(url);
       if (response['success'] == true) {
         setState(() {
           _visitors = List<Map<String, dynamic>>.from(
@@ -92,23 +212,667 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
     }
   }
 
-
   void _applyFilters() {
     setState(() {
-      _filteredVisitors = _visitors.where((visitor) {
-        // Search filter only (removed status filters)
-        if (_searchQuery.isNotEmpty) {
-          final query = _searchQuery.toLowerCase();
-          return (visitor['visitorName']?.toString().toLowerCase().contains(query) ?? false) ||
-              (visitor['phoneNumber']?.toString().contains(query) ?? false) ||
-              (visitor['visitorType']?.toString().toLowerCase().contains(query) ?? false) ||
-              (visitor['building']?.toString().toLowerCase().contains(query) ?? false) ||
-              (visitor['flatNumber']?.toString().toLowerCase().contains(query) ?? false);
-        }
-
-        return true;
-      }).toList();
+      _filteredVisitors = VisitorFilterService.applyFilters(
+        visitors: _visitors,
+        status: _selectedStatus == _allFilterValue ? null : _selectedStatus,
+        building: _selectedBuilding == _allFilterValue ? null : _selectedBuilding,
+        visitorType: _selectedVisitorType == _allFilterValue ? null : _selectedVisitorType,
+        startDate: _startDate,
+        endDate: _endDate,
+        searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+      );
     });
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _selectedStatus = _allFilterValue;
+      _selectedBuilding = _allFilterValue;
+      _selectedVisitorType = _allFilterValue;
+      _startDate = null;
+      _endDate = null;
+      _searchQuery = '';
+    });
+    _applyFilters();
+    _loadVisitors();
+  }
+
+  Future<void> _selectDateRange() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _startDate != null && _endDate != null
+          ? DateTimeRange(start: _startDate!, end: _endDate!)
+          : null,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: AppColors.textOnPrimary,
+              surface: AppColors.surface,
+              onSurface: AppColors.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+      });
+      _applyFilters();
+    }
+  }
+
+  Future<void> _exportToExcel({String? exportType}) async {
+    try {
+      final filePath = await VisitorExportService.exportToExcel(
+        visitors: _filteredVisitors,
+        startDate: _startDate,
+        endDate: _endDate,
+        exportType: exportType,
+      );
+
+      if (filePath != null && mounted) {
+        AppMessageHandler.showSuccess(
+          context,
+          'Excel file exported successfully',
+        );
+        await VisitorExportService.shareFile(filePath, 'Excel');
+      } else if (mounted) {
+        AppMessageHandler.showError(context, 'Failed to export Excel file');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppMessageHandler.showError(context, 'Error exporting to Excel: $e');
+      }
+    }
+  }
+
+  Future<void> _exportToPDF({String? exportType}) async {
+    try {
+      final filePath = await VisitorExportService.exportToPDF(
+        visitors: _filteredVisitors,
+        startDate: _startDate,
+        endDate: _endDate,
+        exportType: exportType,
+      );
+
+      if (filePath != null && mounted) {
+        AppMessageHandler.showSuccess(
+          context,
+          'PDF file exported successfully',
+        );
+        await VisitorExportService.shareFile(filePath, 'PDF');
+      } else if (mounted) {
+        AppMessageHandler.showError(context, 'Failed to export PDF file');
+      }
+    } catch (e) {
+      if (mounted) {
+        AppMessageHandler.showError(context, 'Error exporting to PDF: $e');
+      }
+    }
+  }
+
+  Future<void> _showExportDialog() async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Export Options',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Export Type',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildExportOption(
+              icon: Icons.date_range,
+              title: 'Date Range Export',
+              subtitle: _startDate != null && _endDate != null
+                  ? VisitorFilterService.formatDateRange(_startDate, _endDate)
+                  : 'Export filtered data by date range',
+              onTap: () {
+                Navigator.pop(context);
+                _showExportFormatDialog('date_range');
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildExportOption(
+              icon: Icons.calendar_month,
+              title: 'Month-wise Export',
+              subtitle: 'Export data for a specific month',
+              onTap: () {
+                Navigator.pop(context);
+                _showMonthSelectionDialog();
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExportOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AppColors.primary, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textLight),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showExportFormatDialog(String exportType) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Select Format',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.table_chart, color: AppColors.primary),
+              title: Text('Excel (.xlsx)'),
+              subtitle: Text('Professional spreadsheet format'),
+              onTap: () {
+                Navigator.pop(context);
+                _exportToExcel(exportType: exportType);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.picture_as_pdf, color: AppColors.error),
+              title: Text('PDF (.pdf)'),
+              subtitle: Text('Portable document format'),
+              onTap: () {
+                Navigator.pop(context);
+                _exportToPDF(exportType: exportType);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMonthSelectionDialog() async {
+    final now = DateTime.now();
+    final currentMonth = DateTime(now.year, now.month);
+    final previousMonth = DateTime(now.year, now.month - 1);
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text(
+          'Select Month',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildMonthOption(
+              'Current Month',
+              DateFormat('MMMM yyyy').format(currentMonth),
+              currentMonth,
+              () {
+                Navigator.pop(context);
+                _exportMonthWise(currentMonth);
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildMonthOption(
+              'Previous Month',
+              DateFormat('MMMM yyyy').format(previousMonth),
+              previousMonth,
+              () {
+                Navigator.pop(context);
+                _exportMonthWise(previousMonth);
+              },
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: Icon(Icons.calendar_today, color: AppColors.primary),
+              title: Text('Select Custom Month'),
+              onTap: () async {
+                Navigator.pop(context);
+                final DateTime? picked = await showDatePicker(
+                  context: context,
+                  initialDate: now,
+                  firstDate: DateTime(2020),
+                  lastDate: now,
+                  initialDatePickerMode: DatePickerMode.year,
+                  builder: (context, child) {
+                    return Theme(
+                      data: Theme.of(context).copyWith(
+                        colorScheme: ColorScheme.light(
+                          primary: AppColors.primary,
+                          onPrimary: AppColors.textOnPrimary,
+                          surface: AppColors.surface,
+                          onSurface: AppColors.textPrimary,
+                        ),
+                      ),
+                      child: child!,
+                    );
+                  },
+                );
+                if (picked != null) {
+                  _exportMonthWise(DateTime(picked.year, picked.month));
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthOption(String label, String date, DateTime month, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  date,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textLight),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportMonthWise(DateTime month) async {
+    final monthRange = VisitorFilterService.getMonthRange(month.year, month.month);
+    final monthVisitors = VisitorFilterService.applyFilters(
+      visitors: _visitors,
+      startDate: monthRange['start'],
+      endDate: monthRange['end'],
+    );
+
+    // Temporarily set filtered visitors for export
+    final originalFiltered = _filteredVisitors;
+    setState(() {
+      _filteredVisitors = monthVisitors;
+      _startDate = monthRange['start'];
+      _endDate = monthRange['end'];
+    });
+
+    await _showExportFormatDialog('month_wise');
+
+    // Restore original filtered visitors
+    setState(() {
+      _filteredVisitors = originalFiltered;
+    });
+  }
+
+  void _showFilterDrawer() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textLight,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Filters',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: _clearFilters,
+                          child: Text(
+                            'Clear All',
+                            style: TextStyle(color: AppColors.primary),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close, color: AppColors.textSecondary),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Filter content
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  children: [
+                    // Status Filter
+                    _buildFilterSection(
+                      'Status',
+                      DropdownButtonFormField<String>(
+                        value: _selectedStatus ?? _allFilterValue,
+                        decoration: InputDecoration(
+                          labelText: 'Select Status',
+                          labelStyle: TextStyle(color: AppColors.textSecondary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: AppColors.border),
+                          ),
+                          filled: true,
+                          fillColor: AppColors.background,
+                        ),
+                        items: _availableStatuses.map((status) {
+                          return DropdownMenuItem<String>(
+                            value: status,
+                            child: Text(status),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedStatus = value == _allFilterValue ? null : value;
+                          });
+                          _applyFilters();
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Building Filter
+                    if (_availableBuildings.isNotEmpty)
+                      _buildFilterSection(
+                        'Building',
+                        DropdownButtonFormField<String>(
+                          value: _selectedBuilding ?? _allFilterValue,
+                          decoration: InputDecoration(
+                            labelText: 'Select Building',
+                            labelStyle: TextStyle(color: AppColors.textSecondary),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: AppColors.border),
+                            ),
+                            filled: true,
+                            fillColor: AppColors.background,
+                          ),
+                          items: _availableBuildings.map((building) {
+                            return DropdownMenuItem<String>(
+                              value: building,
+                              child: Text(building),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedBuilding = value == _allFilterValue ? null : value;
+                            });
+                            _applyFilters();
+                          },
+                        ),
+                      ),
+                    if (_availableBuildings.isNotEmpty) const SizedBox(height: 20),
+                    // Visitor Type Filter
+                    _buildFilterSection(
+                      'Visitor Type',
+                      DropdownButtonFormField<String>(
+                        value: _selectedVisitorType ?? _allFilterValue,
+                        decoration: InputDecoration(
+                          labelText: 'Select Visitor Type',
+                          labelStyle: TextStyle(color: AppColors.textSecondary),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: AppColors.border),
+                          ),
+                          filled: true,
+                          fillColor: AppColors.background,
+                        ),
+                        items: _availableVisitorTypes.map((type) {
+                          return DropdownMenuItem<String>(
+                            value: type,
+                            child: Text(type),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedVisitorType = value == _allFilterValue ? null : value;
+                          });
+                          _applyFilters();
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Date Range Filter
+                    _buildFilterSection(
+                      'Date Range',
+                      InkWell(
+                        onTap: _selectDateRange,
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            border: Border.all(color: AppColors.border),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _startDate != null && _endDate != null
+                                          ? VisitorFilterService.formatDateRange(_startDate, _endDate)
+                                          : 'Select date range',
+                                      style: TextStyle(
+                                        color: _startDate != null && _endDate != null
+                                            ? AppColors.textPrimary
+                                            : AppColors.textLight,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(Icons.calendar_today, color: AppColors.primary),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Active Filters Badge
+                    if (VisitorFilterService.getActiveFilterCount(
+                      status: _selectedStatus == _allFilterValue ? null : _selectedStatus,
+                      building: _selectedBuilding == _allFilterValue ? null : _selectedBuilding,
+                      visitorType: _selectedVisitorType == _allFilterValue ? null : _selectedVisitorType,
+                      startDate: _startDate,
+                      endDate: _endDate,
+                      searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+                    ) > 0)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.filter_alt, color: AppColors.primary),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                '${VisitorFilterService.getActiveFilterCount(
+                                  status: _selectedStatus == _allFilterValue ? null : _selectedStatus,
+                                  building: _selectedBuilding == _allFilterValue ? null : _selectedBuilding,
+                                  visitorType: _selectedVisitorType == _allFilterValue ? null : _selectedVisitorType,
+                                  startDate: _startDate,
+                                  endDate: _endDate,
+                                  searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+                                )} active filter(s) applied',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterSection(String title, Widget child) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
   }
 
   Future<void> _markExit(String visitorId) async {
@@ -119,7 +883,10 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
       );
 
       if (response['success'] == true) {
-        AppMessageHandler.showSuccess(context, 'Visitor checked out successfully');
+        AppMessageHandler.showSuccess(
+          context,
+          'Visitor checked out successfully',
+        );
         _loadVisitors();
       } else {
         AppMessageHandler.handleResponse(context, response);
@@ -136,7 +903,9 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Reject Visitor'),
-            content: const Text('Are you sure you want to reject this visitor entry?'),
+            content: const Text(
+              'Are you sure you want to reject this visitor entry?',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -144,7 +913,7 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Reject', style: TextStyle(color: Colors.red)),
+                child: Text('Reject', style: TextStyle(color: AppColors.error)),
               ),
             ],
           ),
@@ -179,7 +948,10 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
       );
 
       if (response['success'] == true) {
-        AppMessageHandler.showSuccess(context, 'Visitor checked in successfully');
+        AppMessageHandler.showSuccess(
+          context,
+          'Visitor checked in successfully',
+        );
         _loadVisitors();
       } else {
         AppMessageHandler.handleResponse(context, response);
@@ -212,8 +984,21 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
     try {
       final dt = DateTime.parse(dateTime);
       final day = dt.day.toString().padLeft(2, '0');
-      final month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][dt.month - 1];
-      final hour = dt.hour > 12 ? dt.hour - 12 : dt.hour;
+      final month = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ][dt.month - 1];
+      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
       final minute = dt.minute.toString().padLeft(2, '0');
       final period = dt.hour >= 12 ? 'PM' : 'AM';
       return '$day $month, $hour:$minute $period';
@@ -249,6 +1034,14 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
         return Icons.local_shipping;
       case 'vendor':
         return Icons.build;
+      case 'cab / ride':
+        return Icons.local_taxi;
+      case 'domestic help':
+        return Icons.home;
+      case 'realtor / sales':
+        return Icons.business;
+      case 'emergency services':
+        return Icons.emergency;
       default:
         return Icons.person;
     }
@@ -257,13 +1050,40 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
   Color _getVisitorTypeColor(String? type) {
     switch (type?.toLowerCase()) {
       case 'guest':
-        return Colors.purple;
+        return AppColors.primary;
       case 'delivery':
-        return Colors.brown;
+        return AppColors.secondaryDark;
       case 'vendor':
-        return Colors.orange;
+        return AppColors.warning;
+      case 'cab / ride':
+        return AppColors.error;
+      case 'domestic help':
+        return AppColors.secondary;
+      case 'realtor / sales':
+        return AppColors.info;
+      case 'emergency services':
+        return AppColors.error;
       default:
-        return Colors.grey;
+        return AppColors.textLight;
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return AppColors.warning;
+      case 'pre-approved':
+        return AppColors.info;
+      case 'checked in':
+        return AppColors.success;
+      case 'checked out':
+        return AppColors.textLight;
+      case 'rejected':
+        return AppColors.error;
+      case 'cancelled':
+        return AppColors.error;
+      default:
+        return AppColors.textLight;
     }
   }
 
@@ -271,14 +1091,21 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
   Widget build(BuildContext context) {
     final userRole = _user?['role'] ?? 'resident';
     final isResident = userRole == 'resident';
+    final activeFiltersCount = [
+      _selectedStatus != null && _selectedStatus != _allFilterValue,
+      _selectedBuilding != null && _selectedBuilding != _allFilterValue,
+      _selectedVisitorType != null && _selectedVisitorType != _allFilterValue,
+      _startDate != null,
+      _endDate != null,
+    ].where((x) => x).length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F1419),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.primary,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white),
+          icon: const Icon(Icons.menu, color: AppColors.textOnPrimary),
           onPressed: () {
             Scaffold.of(context).openDrawer();
           },
@@ -289,15 +1116,15 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
             const Text(
               'Visitors Log',
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.textOnPrimary,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
             Text(
-              "Today's entries",
+              '${_filteredVisitors.length} ${_filteredVisitors.length == 1 ? 'visitor' : 'visitors'}',
               style: TextStyle(
-                color: Colors.white70,
+                color: AppColors.textOnPrimary.withOpacity(0.9),
                 fontSize: 12,
               ),
             ),
@@ -305,35 +1132,38 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search, color: Colors.white),
-            onPressed: () {},
-          ),
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications, color: Colors.white),
-                onPressed: () {},
-              ),
-              Positioned(
-                right: 8,
-                top: 8,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Text(
-                    '3',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+            icon: Stack(
+              children: [
+                const Icon(Icons.filter_list, color: AppColors.textOnPrimary),
+                if (activeFiltersCount > 0)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppColors.error,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$activeFiltersCount',
+                        style: const TextStyle(
+                          color: AppColors.textOnPrimary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ],
+              ],
+            ),
+            onPressed: () {
+              _showFilterDrawer();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.download, color: AppColors.textOnPrimary),
+            onPressed: _showExportDialog,
           ),
         ],
       ),
@@ -349,69 +1179,93 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
                   _applyFilters();
                 });
               },
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: AppColors.textPrimary),
               decoration: InputDecoration(
                 hintText: 'Search visitors...',
-                hintStyle: TextStyle(color: Colors.white30),
-                prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                hintStyle: TextStyle(color: AppColors.textLight),
+                prefixIcon: Icon(Icons.search, color: AppColors.textSecondary),
                 filled: true,
-                fillColor: const Color(0xFF1A2332),
+                fillColor: AppColors.surface,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  borderSide: BorderSide(color: AppColors.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.primary, width: 2),
                 ),
               ),
             ),
           ),
 
-          const SizedBox(height: 12),
 
           // Visitors List
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                ? Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
                 : _filteredVisitors.isEmpty
-                    ? Center(
-                        child: Text(
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.people_outline,
+                          size: 64,
+                          color: AppColors.textLight,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
                           'No visitors found',
-                          style: TextStyle(color: Colors.white70),
+                          style: TextStyle(
+                            color: AppColors.textLight,
+                            fontSize: 16,
+                          ),
                         ),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: _loadVisitors,
-                        color: Colors.white,
-                        backgroundColor: const Color(0xFF0F1419),
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: _filteredVisitors.length,
-                          itemBuilder: (context, index) {
-                            return InkWell(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => VisitorDetailScreen(
-                                      visitorId: _filteredVisitors[index]['_id'],
-                                    ),
-                                  ),
-                                ).then((_) => _loadVisitors());
-                              },
-                              child: _VisitorCard(
-                                visitor: _filteredVisitors[index],
-                                isResident: isResident,
-                                onMarkExit: _markExit,
-                                onUpdateStatus: _updateVisitorStatus,
-                                onCheckIn: _checkInVisitor,
-                                onSetExactTime: _setExactTime,
-                                formatTime: _formatTime,
-                                getDurationInside: _getDurationInside,
-                                getVisitorTypeIcon: _getVisitorTypeIcon,
-                                getVisitorTypeColor: _getVisitorTypeColor,
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _loadVisitors,
+                    color: AppColors.primary,
+                    backgroundColor: AppColors.background,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _filteredVisitors.length,
+                      itemBuilder: (context, index) {
+                        return InkWell(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => VisitorDetailScreen(
+                                  visitorId: _filteredVisitors[index]['_id'],
+                                ),
                               ),
-                            );
+                            ).then((_) => _loadVisitors());
                           },
-                        ),
-                      ),
+                          child: _VisitorCard(
+                            visitor: _filteredVisitors[index],
+                            isResident: isResident,
+                            onMarkExit: _markExit,
+                            onUpdateStatus: _updateVisitorStatus,
+                            onCheckIn: _checkInVisitor,
+                            onSetExactTime: _setExactTime,
+                            formatTime: _formatTime,
+                            getDurationInside: _getDurationInside,
+                            getVisitorTypeIcon: _getVisitorTypeIcon,
+                            getVisitorTypeColor: _getVisitorTypeColor,
+                            getStatusColor: _getStatusColor,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -426,13 +1280,53 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen> {
                   ),
                 ).then((_) => _loadVisitors());
               },
-              backgroundColor: Colors.green,
-              child: const Icon(Icons.add, color: Colors.white),
+              backgroundColor: AppColors.primary,
+              child: const Icon(Icons.add, color: AppColors.textOnPrimary),
             ),
-      // Removed bottom navigation bar as per requirements
+      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
+  Widget _buildBottomNavigationBar() {
+    final userRole = _user?['role'] ?? 'resident';
+    final isResident = userRole == 'resident';
+    
+    // Don't show bottom nav for residents
+    if (isResident) {
+      return const SizedBox.shrink();
+    }
+    
+    return BottomNavigationBar(
+      currentIndex: _currentIndex,
+      onTap: (index) {
+        if (index == 0) {
+          // Navigate back to Dashboard without reloading
+          Navigator.pop(context);
+        } else {
+          setState(() {
+            _currentIndex = index;
+          });
+        }
+      },
+      type: BottomNavigationBarType.fixed,
+      selectedItemColor: AppColors.primary,
+      unselectedItemColor: AppColors.textLight,
+      backgroundColor: AppColors.surface,
+      elevation: 8,
+      selectedFontSize: 14,
+      unselectedFontSize: 12,
+      items: const [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.dashboard),
+          label: 'Dashboard',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.list_alt),
+          label: 'Visitor Log',
+        ),
+      ],
+    );
+  }
 }
 
 class _VisitorCard extends StatelessWidget {
@@ -446,6 +1340,7 @@ class _VisitorCard extends StatelessWidget {
   final Function(String?) getDurationInside;
   final Function(String?) getVisitorTypeIcon;
   final Function(String?) getVisitorTypeColor;
+  final Function(String) getStatusColor;
 
   const _VisitorCard({
     required this.visitor,
@@ -458,24 +1353,25 @@ class _VisitorCard extends StatelessWidget {
     required this.getDurationInside,
     required this.getVisitorTypeIcon,
     required this.getVisitorTypeColor,
+    required this.getStatusColor,
   });
 
-  Color _getStatusColor(String status) {
+  Color _getStatusColorLocal(String status) {
     switch (status.toLowerCase()) {
       case 'pending':
-        return Colors.orange;
+        return AppColors.warning;
       case 'pre-approved':
-        return Colors.blue;
+        return AppColors.info;
       case 'checked in':
-        return Colors.green;
+        return AppColors.success;
       case 'checked out':
-        return Colors.grey;
+        return AppColors.textLight;
       case 'rejected':
-        return Colors.red;
+        return AppColors.error;
       case 'cancelled':
-        return Colors.red;
+        return AppColors.error;
       default:
-        return Colors.grey;
+        return AppColors.textLight;
     }
   }
 
@@ -498,121 +1394,29 @@ class _VisitorCard extends StatelessWidget {
     }
   }
 
-  Future<void> _showExactTimeDialog(BuildContext context, String visitorId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Set Exact Time'),
-        content: const Text('Do you want to set the exact entry time to now?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('No'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Yes', style: TextStyle(color: Colors.blue)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      onSetExactTime(visitorId);
-    }
-  }
-
-  Widget _buildStatusActionButtons(Map<String, dynamic> visitor, bool isInside, Function(String) onMarkExit) {
-    final status = visitor['status'] ?? 'Pending';
-    
-    if (isInside) {
-      // Show Check Out button
-      return SizedBox(
-        width: double.infinity,
-        child: ElevatedButton(
-          onPressed: () => onMarkExit(visitor['_id']),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
-          child: const Text(
-            'Mark Exit',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
-    } else if (status == 'Pending') {
-      // Show Check In button for Pending (removed Approve/Reject)
-      return SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: () => onCheckIn(visitor['_id']),
-          icon: const Icon(Icons.login, size: 18),
-          label: const Text('Check In'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
-        ),
-      );
-    } else if (status == 'Pre-Approved') {
-      // Show Check In button
-      return SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: () => onCheckIn(visitor['_id']),
-          icon: const Icon(Icons.login, size: 18),
-          label: const Text('Check In'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
-        ),
-      );
-    } else {
-      // Show status chip for other statuses
-      return Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-        decoration: BoxDecoration(
-          color: _getStatusColor(status).withOpacity(0.2),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _getStatusColor(status)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(_getStatusIcon(status), color: _getStatusColor(status), size: 16),
-            const SizedBox(width: 8),
-            Text(
-              'Status: $status',
-              style: TextStyle(
-                color: _getStatusColor(status),
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final building = visitor['building'] ?? '';
     final flatNumber = visitor['flatNumber'] ?? '';
     final checkInTime = visitor['checkInTime'] ?? visitor['entryDate'];
     final hasExited = visitor['checkOutTime'] != null;
+    final status = visitor['status'] ?? 'Pending';
+    final visitorType = visitor['visitorType'] ?? 'Guest';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A2332),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.1),
-          width: 1,
-        ),
+        border: Border.all(color: AppColors.border, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -624,12 +1428,16 @@ class _VisitorCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.2),
+                  color: getVisitorTypeColor(visitorType).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: getVisitorTypeColor(visitorType).withOpacity(0.3),
+                    width: 1,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.person,
-                  color: Colors.blue,
+                child: Icon(
+                  getVisitorTypeIcon(visitorType),
+                  color: getVisitorTypeColor(visitorType),
                   size: 24,
                 ),
               ),
@@ -641,18 +1449,49 @@ class _VisitorCard extends StatelessWidget {
                     Text(
                       visitor['visitorName'] ?? 'Unknown Visitor',
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: AppColors.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      '$building - $flatNumber',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                      ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.apartment,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$building - $flatNumber',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getStatusColorLocal(
+                              status,
+                            ).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            status.toUpperCase(),
+                            style: TextStyle(
+                              color: _getStatusColorLocal(status),
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -664,34 +1503,36 @@ class _VisitorCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.1),
+              color: AppColors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: Colors.blue.withOpacity(0.3),
+                color: AppColors.primary.withOpacity(0.3),
                 width: 1,
               ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.login, size: 18, color: Colors.blue),
+                Icon(Icons.login, size: 18, color: AppColors.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Login Time',
                         style: TextStyle(
-                          color: Colors.white70,
+                          color: AppColors.textSecondary,
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        checkInTime != null ? formatTime(checkInTime) : 'Not set',
-                        style: const TextStyle(
-                          color: Colors.blue,
+                        checkInTime != null
+                            ? formatTime(checkInTime)
+                            : 'Not set',
+                        style: TextStyle(
+                          color: AppColors.primary,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
@@ -708,25 +1549,25 @@ class _VisitorCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
+                color: AppColors.error.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.red.withOpacity(0.3),
+                  color: AppColors.error.withOpacity(0.3),
                   width: 1,
                 ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.logout, size: 18, color: Colors.red),
+                  Icon(Icons.logout, size: 18, color: AppColors.error),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Exit Time',
                           style: TextStyle(
-                            color: Colors.white70,
+                            color: AppColors.textSecondary,
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
                           ),
@@ -734,8 +1575,8 @@ class _VisitorCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           formatTime(visitor['checkOutTime']),
-                          style: const TextStyle(
-                            color: Colors.red,
+                          style: TextStyle(
+                            color: AppColors.error,
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
@@ -753,18 +1594,16 @@ class _VisitorCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => _showExitConfirmationDialog(context, visitor['_id']),
+                onPressed: () =>
+                    _showExitConfirmationDialog(context, visitor['_id']),
                 icon: const Icon(Icons.exit_to_app, size: 20),
                 label: const Text(
                   'Exit',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppColors.error,
+                  foregroundColor: AppColors.textOnPrimary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -779,32 +1618,35 @@ class _VisitorCard extends StatelessWidget {
     );
   }
 
-  Future<void> _showExitConfirmationDialog(BuildContext context, String visitorId) async {
+  Future<void> _showExitConfirmationDialog(
+    BuildContext context,
+    String visitorId,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2332),
-        title: const Text(
+        backgroundColor: AppColors.surface,
+        title: Text(
           'Exit Visitor',
-          style: TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.textPrimary),
         ),
-        content: const Text(
+        content: Text(
           'Are you sure you want to mark this visitor as exited? This will record the exit time.',
-          style: TextStyle(color: Colors.white70),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: Colors.white70),
+              style: TextStyle(color: AppColors.textSecondary),
             ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+              backgroundColor: AppColors.error,
+              foregroundColor: AppColors.textOnPrimary,
             ),
             child: const Text('Exit'),
           ),
@@ -816,53 +1658,4 @@ class _VisitorCard extends StatelessWidget {
       onMarkExit(visitorId);
     }
   }
-
-  Widget _buildTimeInfo({
-    required IconData icon,
-    required String label,
-    required String? time,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: color.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            time != null ? formatTime(time) : 'Not set',
-            style: TextStyle(
-              color: time != null ? color : Colors.grey,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
-
-

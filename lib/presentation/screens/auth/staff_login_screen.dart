@@ -8,11 +8,8 @@ import 'otp_verification_screen.dart';
 
 class StaffLoginScreen extends StatefulWidget {
   final String roleContext;
-  
-  const StaffLoginScreen({
-    super.key,
-    required this.roleContext,
-  });
+
+  const StaffLoginScreen({super.key, required this.roleContext});
 
   @override
   State<StaffLoginScreen> createState() => _StaffLoginScreenState();
@@ -104,7 +101,9 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
 
         // Check user status
         if (user.status != 'active') {
-          throw Exception('Your account is ${user.status}. Please contact admin.');
+          throw Exception(
+            'Your account is ${user.status}. Please contact admin.',
+          );
         }
 
         // Save token
@@ -179,7 +178,10 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                       Row(
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.white),
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.white,
+                            ),
                             onPressed: () => Navigator.pop(context),
                           ),
                           const SizedBox(width: 8),
@@ -263,7 +265,9 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                 if (value == null || value.isEmpty) {
                                   return 'Please enter your email address';
                                 }
-                                final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                                final emailRegex = RegExp(
+                                  r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                                );
                                 if (!emailRegex.hasMatch(value)) {
                                   return 'Please enter a valid email address';
                                 }
@@ -287,7 +291,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                     ),
                                     onPressed: () {
                                       setState(() {
-                                        _isPasswordVisible = !_isPasswordVisible;
+                                        _isPasswordVisible =
+                                            !_isPasswordVisible;
                                       });
                                     },
                                   ),
@@ -326,7 +331,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => const ForgotPasswordScreen(),
+                                          builder: (_) =>
+                                              const ForgotPasswordScreen(),
                                         ),
                                       );
                                     },
@@ -363,8 +369,8 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                         strokeWidth: 2,
                                         valueColor:
                                             AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
+                                              Colors.white,
+                                            ),
                                       ),
                                     )
                                   : Row(
@@ -411,4 +417,3 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
     );
   }
 }
-

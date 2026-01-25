@@ -1,14 +1,15 @@
 import '../../../core/imports/app_imports.dart';
 import 'dart:convert';
+import '../../../core/constants/api_constants.dart';
 
-class CreateUserScreen extends StatefulWidget {
-  const CreateUserScreen({super.key});
+class StaffCreateUserScreen extends StatefulWidget {
+  const StaffCreateUserScreen({super.key});
 
   @override
-  State<CreateUserScreen> createState() => _CreateUserScreenState();
+  State<StaffCreateUserScreen> createState() => _StaffCreateUserScreenState();
 }
 
-class _CreateUserScreenState extends State<CreateUserScreen> {
+class _StaffCreateUserScreenState extends State<StaffCreateUserScreen> {
   final _formKey = GlobalKey<FormState>();
   final _fullNameController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -16,9 +17,8 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
   final _passwordController = TextEditingController();
   final _scrollController = ScrollController();
 
-  String _selectedRole = 'resident';
   String? _selectedBuildingCode;
-  List<Map<String, dynamic>> _allBuildings = [];
+  List<Map<String, dynamic>> _assignedBuildings = [];
   int? _selectedFloor;
   String? _selectedFlatNumber;
   String? _selectedFlatType;
@@ -30,10 +30,6 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
   bool _isLoadingBuildings = false;
   bool _isLoadingFlats = false;
   bool _isCreating = false;
-  bool _showOTPVerification = false;
-  String? _pendingUserDataJson;
-  String? _adminEmail;
-  String? _residentEmail; // Store resident's email for OTP verification display
 
   // Password strength tracking
   String _passwordStrength = '';
@@ -46,10 +42,23 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
   @override
   void initState() {
     super.initState();
-    _loadBuildings();
+    _loadAssignedBuildings();
     _passwordController.addListener(_checkPasswordStrength);
     _phoneController.addListener(_validatePhone);
     _emailController.addListener(_validateEmail);
+  }
+
+  @override
+  void dispose() {
+    _fullNameController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _scrollController.dispose();
+    _passwordController.removeListener(_checkPasswordStrength);
+    _phoneController.removeListener(_validatePhone);
+    _emailController.removeListener(_validateEmail);
+    super.dispose();
   }
 
   void _checkPasswordStrength() {
@@ -101,70 +110,37 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
     });
   }
 
-  void _formatPhoneNumber(String value) {
-    final digitsOnly = value.replaceAll(RegExp(r'[^\d]'), '');
-    if (digitsOnly.length > 10) return;
-
-    final formatted = digitsOnly.length > 0
-        ? '${digitsOnly.substring(0, digitsOnly.length > 5 ? 5 : digitsOnly.length)}${digitsOnly.length > 5 ? ' ${digitsOnly.substring(5)}' : ''}'
-        : '';
-
-    _phoneController.value = TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
-  }
-
-  Future<void> _loadBuildings() async {
+  Future<void> _loadAssignedBuildings() async {
     setState(() => _isLoadingBuildings = true);
     try {
-      final response = await ApiService.get(ApiConstants.adminBuildings);
+      final response = await ApiService.get(ApiConstants.staffBuildings);
       if (response['success'] == true) {
         setState(() {
-          _allBuildings = List<Map<String, dynamic>>.from(
+          _assignedBuildings = List<Map<String, dynamic>>.from(
             response['data']?['buildings'] ?? [],
           );
-          // Validate stored building code against fetched buildings
-          if (_allBuildings.isNotEmpty) {
-            final storedCode = StorageService.getString(AppConstants.selectedBuildingKey);
-            
-            // Check if stored code exists in the fetched buildings
-            final isValidCode = storedCode != null && 
-                _allBuildings.any((b) => b['code'] == storedCode);
-            
-            if (isValidCode) {
-              _selectedBuildingCode = storedCode;
-            } else {
-              // Use first building and update storage
-              _selectedBuildingCode = _allBuildings.first['code'];
-              StorageService.setString(
-                AppConstants.selectedBuildingKey,
-                _selectedBuildingCode!,
-              );
-            }
+          
+          // Auto-select primary building or first building
+          if (_assignedBuildings.isNotEmpty) {
+            final primaryBuilding = _assignedBuildings.firstWhere(
+              (b) => b['isPrimary'] == true,
+              orElse: () => _assignedBuildings.first,
+            );
+            _selectedBuildingCode = primaryBuilding['code'];
             _loadAvailableFlats();
           }
         });
       }
     } catch (e) {
-      print('❌ [FLUTTER] Error loading buildings: $e');
-      AppMessageHandler.handleError(context, e);
+      print('❌ [FLUTTER] Error loading assigned buildings: $e');
+      if (mounted) {
+        AppMessageHandler.handleError(context, e);
+      }
     } finally {
-      setState(() => _isLoadingBuildings = false);
+      if (mounted) {
+        setState(() => _isLoadingBuildings = false);
+      }
     }
-  }
-
-  @override
-  void dispose() {
-    _fullNameController.dispose();
-    _phoneController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _scrollController.dispose();
-    _passwordController.removeListener(_checkPasswordStrength);
-    _phoneController.removeListener(_validatePhone);
-    _emailController.removeListener(_validateEmail);
-    super.dispose();
   }
 
   Future<void> _loadAvailableFlats() async {
@@ -179,12 +155,10 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
       String flatsUrl = ApiConstants.adminAvailableFlats;
       flatsUrl = ApiConstants.addBuildingCode(flatsUrl, _selectedBuildingCode);
       final response = await ApiService.get(flatsUrl);
-      print('✅ [FLUTTER] Available flats response received');
-      print('📦 [FLUTTER] Response: ${response.toString()}');
-
+      
       if (response['success'] == true) {
         final flats = List<Map<String, dynamic>>.from(
-          response['data']?['availableFlats'] ?? [],
+          response['data']?['availableFlats'] ?? response['data']?['flats'] ?? [],
         );
         print('🏠 [FLUTTER] Found ${flats.length} available flats');
         setState(() {
@@ -193,160 +167,11 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
       }
     } catch (e) {
       print('❌ [FLUTTER] Error loading flats: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading flats: $e')));
-      }
     } finally {
       if (mounted) {
         setState(() => _isLoadingFlats = false);
       }
     }
-  }
-
-  Future<void> _createUser() async {
-    // Haptic feedback for better UX
-    HapticFeedback.mediumImpact();
-
-    if (!_formKey.currentState!.validate()) {
-      // Scroll to first error field
-      await Future.delayed(const Duration(milliseconds: 100));
-      _scrollController.animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-      return;
-    }
-
-    // Validation for flat selection (required for residents)
-    if (_selectedFloor == null ||
-        _selectedFlatNumber == null ||
-        _selectedFlatType == null) {
-      AppMessageHandler.showError(
-        context,
-        'Please select floor, flat number, and flat type',
-      );
-      // Scroll to flat selection section
-      await Future.delayed(const Duration(milliseconds: 100));
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent * 0.6,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-      return;
-    }
-
-    // Validate building selection
-    if (_selectedBuildingCode == null || _selectedBuildingCode!.isEmpty) {
-      AppMessageHandler.showError(context, 'Please select a building');
-      setState(() => _isCreating = false);
-      return;
-    }
-
-    // Validate phone number format
-    final phoneDigits = _phoneController.text.replaceAll(RegExp(r'[^\d]'), '');
-    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phoneDigits)) {
-      AppMessageHandler.showError(
-        context,
-        'Please enter a valid 10-digit Indian phone number',
-      );
-      return;
-    }
-
-    // Validate email (mandatory)
-    final email = _emailController.text.trim();
-    if (email.isEmpty) {
-      AppMessageHandler.showError(
-        context,
-        'Email is required',
-      );
-      return;
-    }
-    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
-      AppMessageHandler.showError(
-        context,
-        'Please enter a valid email address',
-      );
-      return;
-    }
-
-    setState(() => _isCreating = true);
-
-    try {
-      final Map<String, dynamic> userData = {
-        'fullName': _fullNameController.text.trim(),
-        'phoneNumber': phoneDigits, // Send only digits
-        'email': email.toLowerCase(), // Email is mandatory
-        'password': _passwordController.text,
-        'role': 'resident', // Always resident for this screen
-        'floorNumber': _selectedFloor!,
-        'flatNumber': _selectedFlatNumber!,
-        'flatType': _selectedFlatType!,
-        'residentType': _residentType,
-        'isPrimaryResident': _isPrimaryResident,
-        'buildingCode': _selectedBuildingCode,
-      };
-
-      // First step: Request OTP for admin verification
-      final otpResponse = await ApiService.post(
-        '${ApiConstants.adminUsers}/request-otp',
-        userData,
-      );
-
-      if (mounted) {
-        if (otpResponse['success'] == true) {
-          // Get admin email from response
-          final adminEmail = otpResponse['data']?['adminEmail'];
-          
-          // Store user data for account creation after OTP verification
-          _pendingUserDataJson = jsonEncode(userData);
-          _adminEmail = adminEmail;
-          _residentEmail = email.toLowerCase(); // Store resident's email for display
-          
-          setState(() {
-            _isCreating = false;
-            _showOTPVerification = true;
-          });
-          
-          HapticFeedback.mediumImpact();
-          AppMessageHandler.showSuccess(
-            context,
-            'OTP sent to resident\'s email. Please verify to create the account.',
-          );
-        } else {
-          final errorMessage = otpResponse['message'] ?? 'Failed to send OTP';
-          AppMessageHandler.showError(context, errorMessage);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        // Handle network errors gracefully
-        final errorMessage = e.toString();
-        if (errorMessage.contains('SocketException') ||
-            errorMessage.contains('Failed host lookup')) {
-          AppMessageHandler.showError(
-            context,
-            'Network error. Please check your internet connection and try again.',
-          );
-        } else {
-          AppMessageHandler.handleError(context, e);
-        }
-      }
-    } finally {
-      if (mounted && !_showOTPVerification) {
-        setState(() => _isCreating = false);
-      }
-    }
-  }
-
-  // Role is always resident, so this method is kept for compatibility but simplified
-  void _onRoleChanged(String? role) {
-    // Role is always 'resident' now, no changes needed
-    setState(() {
-      _selectedRole = 'resident';
-    });
   }
 
   void _onFlatSelected(Map<String, dynamic> flat) {
@@ -360,40 +185,88 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
     });
   }
 
-  Future<void> _verifyOTPAndCreateAccount(String otp) async {
-    if (_pendingUserDataJson == null) {
-      AppMessageHandler.showError(context, 'Session expired. Please try again.');
-      setState(() {
-        _showOTPVerification = false;
-      });
+  Future<void> _createUser() async {
+    HapticFeedback.mediumImpact();
+
+    if (!_formKey.currentState!.validate()) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      return;
+    }
+
+    if (_selectedFloor == null || _selectedFlatNumber == null || _selectedFlatType == null) {
+      AppMessageHandler.showError(
+        context,
+        'Please select floor, flat number, and flat type',
+      );
+      await Future.delayed(const Duration(milliseconds: 100));
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent * 0.6,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      return;
+    }
+
+    if (_selectedBuildingCode == null || _selectedBuildingCode!.isEmpty) {
+      AppMessageHandler.showError(context, 'Please select a building');
+      return;
+    }
+
+    final phoneDigits = _phoneController.text.replaceAll(RegExp(r'[^\d]'), '');
+    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phoneDigits)) {
+      AppMessageHandler.showError(
+        context,
+        'Please enter a valid 10-digit Indian phone number',
+      );
+      return;
+    }
+
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      AppMessageHandler.showError(context, 'Email is required');
+      return;
+    }
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      AppMessageHandler.showError(context, 'Please enter a valid email address');
       return;
     }
 
     setState(() => _isCreating = true);
 
     try {
-      final userData = jsonDecode(_pendingUserDataJson!);
-      userData['otp'] = otp;
+      final phoneDigits = _phoneController.text.replaceAll(RegExp(r'[^\d]'), '');
+      final email = _emailController.text.trim();
+      
+      final userData = {
+        'fullName': _fullNameController.text.trim(),
+        'phoneNumber': phoneDigits,
+        'email': email.toLowerCase(),
+        'password': _passwordController.text,
+        'role': 'resident',
+        'buildingCode': _selectedBuildingCode,
+        'floorNumber': _selectedFloor,
+        'flatNumber': _selectedFlatNumber,
+        'flatType': _selectedFlatType,
+        'residentType': _residentType,
+        'isPrimaryResident': _isPrimaryResident,
+      };
 
-      final response = await ApiService.post(
-        '${ApiConstants.adminUsers}/verify-otp-create',
-        userData,
-      );
+      final response = await ApiService.post(ApiConstants.staffUsers, userData);
 
       if (mounted) {
         if (response['success'] == true) {
-          HapticFeedback.mediumImpact();
           AppMessageHandler.showSuccess(
             context,
-            response['message'] ?? 'User created successfully',
+            'Resident created successfully',
           );
-          await Future.delayed(const Duration(milliseconds: 1500));
-          if (mounted) {
-            Navigator.pop(context, true);
-          }
+          Navigator.pop(context, true);
         } else {
-          final errorMessage = response['message'] ?? 'Failed to create user';
-          AppMessageHandler.showError(context, errorMessage);
+          AppMessageHandler.handleResponse(context, response);
         }
       }
     } catch (e) {
@@ -409,24 +282,46 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_showOTPVerification) {
+    if (_isLoadingBuildings) {
       return Scaffold(
-        backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: const Text(
-            'Verify OTP',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+          title: const Text('Create Resident'),
           backgroundColor: AppColors.primary,
-          elevation: 0,
         ),
-        body: _buildOTPVerificationWidget(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_assignedBuildings.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Create Resident'),
+          backgroundColor: AppColors.primary,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.business_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text(
+                'No buildings assigned',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Please contact admin to assign buildings',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     return LoadingOverlay(
       isLoading: _isCreating,
-      message: 'Sending OTP...',
+      message: 'Creating resident...',
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
@@ -446,8 +341,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                 width: double.infinity,
                 height: 4,
                 color: AppColors.background,
-                child:
-                    _selectedFloor != null &&
+                child: _selectedFloor != null &&
                         _selectedFlatNumber != null &&
                         _selectedBuildingCode != null
                     ? LinearProgressIndicator(
@@ -487,13 +381,13 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                       // Role Selection
                       _buildRoleSelectionCard(),
                       const SizedBox(height: 20),
-                      // Building Selection - Always show
+                      // Building Selection
                       _buildBuildingSelectionCard(),
                       const SizedBox(height: 20),
                       // User Information Section
                       _buildUserInformationCard(),
                       const SizedBox(height: 20),
-                      // Flat Selection (required for residents)
+                      // Flat Selection
                       _buildFlatSelectionCard(),
                       const SizedBox(height: 20),
 
@@ -673,7 +567,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Choose the apartment building',
+                        'Choose from your assigned buildings',
                         style: TextStyle(
                           fontSize: 13,
                           color: AppColors.textSecondary,
@@ -684,31 +578,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            if (_isLoadingBuildings)
-              Container(
-                padding: const EdgeInsets.all(24.0),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Center(
-                  child: Column(
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 12),
-                      Text(
-                        'Loading buildings...',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else if (_allBuildings.isEmpty)
+            if (_assignedBuildings.isEmpty)
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -722,7 +592,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'No buildings available. Please add a building first.',
+                        'No buildings assigned. Please contact admin.',
                         style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 14,
@@ -748,8 +618,8 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                   decoration: InputDecoration(
                     labelText: 'Building Name',
                     hintText: _selectedBuildingCode == null
-                        ? (_allBuildings.length == 1 && _allBuildings.isNotEmpty
-                            ? _allBuildings.first['name'] ?? 'Select building'
+                        ? (_assignedBuildings.length == 1 && _assignedBuildings.isNotEmpty
+                            ? _assignedBuildings.first['name'] ?? 'Select building'
                             : 'Choose a building')
                         : null,
                     prefixIcon: const Icon(Icons.business, color: AppColors.primary),
@@ -761,7 +631,7 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                   ),
                   dropdownColor: Colors.white,
                   icon: Icon(Icons.keyboard_arrow_down, color: AppColors.primary),
-                  items: _allBuildings.map((building) {
+                  items: _assignedBuildings.map((building) {
                     final isSelected = _selectedBuildingCode == building['code'];
                     return DropdownMenuItem<String>(
                       value: building['code'],
@@ -775,6 +645,10 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
                         ),
                         child: Row(
                           children: [
+                            if (building['isPrimary'] == true)
+                              Icon(Icons.star, size: 16, color: AppColors.warning),
+                            if (building['isPrimary'] == true)
+                              const SizedBox(width: 8),
                             Icon(
                               Icons.apartment,
                               size: 16,
@@ -1383,195 +1257,6 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
     }).toList();
   }
 
-  Widget _buildOTPVerificationWidget() {
-    final List<TextEditingController> otpControllers =
-        List.generate(6, (_) => TextEditingController());
-    final List<FocusNode> focusNodes = List.generate(6, (_) => FocusNode());
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.verified_user,
-                    size: 64,
-                    color: AppColors.primary,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Verify Your Email',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'We sent a 6-digit OTP to',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  if (_residentEmail != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      _residentEmail!,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Please check your email inbox',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ] else if (_adminEmail != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      _adminEmail!,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: List.generate(6, (index) {
-                      return SizedBox(
-                        width: 45,
-                        height: 55,
-                        child: TextField(
-                          controller: otpControllers[index],
-                          focusNode: focusNodes[index],
-                          textAlign: TextAlign.center,
-                          keyboardType: TextInputType.number,
-                          maxLength: 1,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          decoration: InputDecoration(
-                            counterText: '',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: AppColors.primary,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          onChanged: (value) {
-                            if (value.isNotEmpty && index < 5) {
-                              focusNodes[index + 1].requestFocus();
-                            }
-                            if (value.isEmpty && index > 0) {
-                              focusNodes[index - 1].requestFocus();
-                            }
-                            // Auto-submit when all fields are filled
-                            if (index == 5 &&
-                                value.isNotEmpty &&
-                                otpControllers.every(
-                                  (ctrl) => ctrl.text.isNotEmpty,
-                                )) {
-                              final otp = otpControllers
-                                  .map((c) => c.text)
-                                  .join();
-                              _verifyOTPAndCreateAccount(otp);
-                            }
-                          },
-                        ),
-                      );
-                    }),
-                  ),
-                  const SizedBox(height: 32),
-                  ElevatedButton(
-                    onPressed: _isCreating
-                        ? null
-                        : () {
-                            final otp = otpControllers
-                                .map((c) => c.text)
-                                .join();
-                            if (otp.length == 6) {
-                              _verifyOTPAndCreateAccount(otp);
-                            } else {
-                              AppMessageHandler.showError(
-                                context,
-                                'Please enter complete 6-digit OTP',
-                              );
-                            }
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _isCreating
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white,
-                              ),
-                            ),
-                          )
-                        : const Text(
-                            'Verify & Create Account',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextButton(
-                    onPressed: _isCreating
-                        ? null
-                        : () {
-                            setState(() {
-                              _showOTPVerification = false;
-                              _pendingUserDataJson = null;
-                              _adminEmail = null;
-                              _residentEmail = null;
-                            });
-                          },
-                    child: const Text('Back to Form'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSubmitButton() {
     final isFormValid =
         _fullNameController.text.trim().isNotEmpty &&
@@ -1608,3 +1293,4 @@ class _CreateUserScreenState extends State<CreateUserScreen> {
     );
   }
 }
+

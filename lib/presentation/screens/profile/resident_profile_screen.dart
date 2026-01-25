@@ -3,9 +3,12 @@ import '../../../data/models/user_data.dart';
 import 'dart:convert';
 import '../auth/role_selection_screen.dart';
 import 'edit_profile_screen.dart';
+import 'change_password_screen.dart';
 
 class ResidentProfileScreen extends StatefulWidget {
-  const ResidentProfileScreen({super.key});
+  final bool showAppBar;
+  
+  const ResidentProfileScreen({super.key, this.showAppBar = true});
 
   @override
   State<ResidentProfileScreen> createState() => _ResidentProfileScreenState();
@@ -84,54 +87,55 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        backgroundColor: AppColors.primary,
-        actions: [
-          TextButton(
-            onPressed: () {
-              print('🖱️ [FLUTTER] Edit profile button clicked');
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => EditProfileScreen(user: _user),
-                ),
-              ).then((_) => _loadData());
-            },
-            child: const Text(
-              'Edit',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    // Profile Card
-                    _buildProfileCard(),
-                    const SizedBox(height: 20),
-                    // Flat Details
-                    _buildFlatDetails(),
-                    const SizedBox(height: 20),
-                    // Account Section
-                    _buildAccountSection(),
-                    const SizedBox(height: 20),
-                    // Preferences Section
-                    _buildPreferencesSection(),
-                    const SizedBox(height: 20),
-                    // Support Section
-                    _buildSupportSection(),
-                  ],
-                ),
+    final content = _isLoading
+        ? const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          )
+        : RefreshIndicator(
+            onRefresh: _loadData,
+            color: AppColors.primary,
+            backgroundColor: AppColors.background,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  // Profile Card
+                  _buildProfileCard(),
+                  const SizedBox(height: 20),
+                  // Flat Details
+                  _buildFlatDetails(),
+                  const SizedBox(height: 20),
+                  // Account Section
+                  _buildAccountSection(),
+                  const SizedBox(height: 20),
+                  // Preferences Section
+                  _buildPreferencesSection(),
+                  const SizedBox(height: 20),
+                  // Support Section
+                  _buildSupportSection(),
+                  const SizedBox(height: 20),
+                ],
               ),
             ),
+          );
+
+    if (widget.showAppBar) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: const Text('Profile'),
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+        ),
+        body: content,
+      );
+    }
+    
+    // When used in tabs, wrap in container with background color
+    return Container(
+      color: AppColors.background,
+      child: content,
     );
   }
 
@@ -139,32 +143,46 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
     final profilePictureUrl = _user?.profilePicture;
     
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
         children: [
           Stack(
             children: [
               Container(
-                width: 80,
-                height: 80,
+                width: 100,
+                height: 100,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: AppColors.primary,
-                    width: 2,
+                    width: 3,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.2),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: ClipOval(
                   child: profilePictureUrl != null && profilePictureUrl.isNotEmpty
                       ? Image.network(
                           profilePictureUrl,
                           fit: BoxFit.cover,
-                          width: 80,
-                          height: 80,
+                          width: 100,
+                          height: 100,
                           loadingBuilder: (context, child, loadingProgress) {
                             if (loadingProgress == null) return child;
                             return Center(
@@ -173,18 +191,19 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
                                     ? loadingProgress.cumulativeBytesLoaded /
                                         loadingProgress.expectedTotalBytes!
                                     : null,
+                                color: AppColors.primary,
                               ),
                             );
                           },
                           errorBuilder: (context, error, stackTrace) {
                             return Container(
-                              color: AppColors.primary.withOpacity(0.2),
+                              color: AppColors.primary.withOpacity(0.1),
                               child: Center(
                                 child: Text(
                                   _user?.fullName[0].toUpperCase() ?? 'R',
                                   style: const TextStyle(
                                     color: AppColors.primary,
-                                    fontSize: 32,
+                                    fontSize: 40,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -193,13 +212,13 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
                           },
                         )
                       : Container(
-                          color: AppColors.primary.withOpacity(0.2),
+                          color: AppColors.primary.withOpacity(0.1),
                           child: Center(
                             child: Text(
                               _user?.fullName[0].toUpperCase() ?? 'R',
                               style: const TextStyle(
                                 color: AppColors.primary,
-                                fontSize: 32,
+                                fontSize: 40,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -211,67 +230,106 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
                 bottom: 0,
                 right: 0,
                 child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: const BoxDecoration(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
                     color: AppColors.primary,
                     shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: const Icon(
                     Icons.camera_alt,
                     color: Colors.white,
-                    size: 16,
+                    size: 18,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _user?.fullName ?? 'Resident',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+          const SizedBox(height: 20),
+          Text(
+            _user?.fullName ?? 'Resident',
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.apartment,
+                size: 16,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _user?.flatNumber != null && _user?.wing != null
+                    ? '${_user!.wing}-${_user!.flatNumber}'
+                    : _user?.flatNumber ?? 'No flat assigned',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w500,
                 ),
-                const SizedBox(height: 4),
+              ),
+            ],
+          ),
+          if (_user?.email != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.email_outlined,
+                  size: 14,
+                  color: AppColors.textLight,
+                ),
+                const SizedBox(width: 6),
                 Text(
-                  _user?.flatNumber != null && _user?.wing != null
-                      ? '${_user!.flatNumber} • ${_user!.wing}'
-                      : _user?.flatNumber ?? 'No flat assigned',
+                  _user!.email!,
                   style: const TextStyle(
                     fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _user?.role == 'admin'
-                        ? AppColors.error.withOpacity(0.1)
-                        : AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _user?.role?.toUpperCase() ?? 'RESIDENT',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: _user?.role == 'admin'
-                          ? AppColors.error
-                          : AppColors.primary,
-                    ),
+                    color: AppColors.textLight,
                   ),
                 ),
               ],
+            ),
+          ],
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: _user?.role == 'admin'
+                  ? AppColors.error.withOpacity(0.1)
+                  : AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              _user?.role?.toUpperCase() ?? 'RESIDENT',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+                color: _user?.role == 'admin'
+                    ? AppColors.error
+                    : AppColors.primary,
+              ),
             ),
           ),
         ],
@@ -284,61 +342,129 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Flat Details',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(
-                child: _DetailItem(
-                  label: 'Flat Number',
-                  value: _flatData?['flatNumber'] ?? _user?.flatNumber ?? 'N/A',
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.apartment,
+                  color: AppColors.primary,
+                  size: 20,
                 ),
               ),
-              Expanded(
-                child: _DetailItem(
-                  label: 'Floor',
-                  value: _flatData != null
-                      ? '${_flatData!['floorNumber']}'
-                      : _user?.floorNumber?.toString() ?? 'N/A',
+              const SizedBox(width: 12),
+              const Text(
+                'Flat Details',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _DetailItem(
-                  label: 'Wing',
-                  value: _user?.wing ?? 'N/A',
-                ),
-              ),
-              Expanded(
-                child: _DetailItem(
-                  label: 'Type',
-                  value: _flatData?['flatType'] ?? _user?.flatType ?? 'N/A',
-                ),
-              ),
-            ],
-          ),
-          if (_flatData?['squareFeet'] != null) ...[
-            const SizedBox(height: 16),
-            _DetailItem(
-              label: 'Area',
-              value: '${_flatData!['squareFeet']} sq.ft',
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
             ),
-          ],
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DetailItem(
+                        label: 'Flat Number',
+                        value: _flatData?['flatNumber'] ?? _user?.flatNumber ?? 'N/A',
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 40,
+                      color: AppColors.border,
+                    ),
+                    Expanded(
+                      child: _DetailItem(
+                        label: 'Floor',
+                        value: _flatData != null
+                            ? '${_flatData!['floorNumber']}'
+                            : _user?.floorNumber?.toString() ?? 'N/A',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  height: 1,
+                  color: AppColors.border,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DetailItem(
+                        label: 'Wing',
+                        value: _user?.wing ?? 'N/A',
+                      ),
+                    ),
+                    Container(
+                      width: 1,
+                      height: 40,
+                      color: AppColors.border,
+                    ),
+                    Expanded(
+                      child: _DetailItem(
+                        label: 'Type',
+                        value: _flatData?['flatType'] ?? _user?.flatType ?? 'N/A',
+                      ),
+                    ),
+                  ],
+                ),
+                if (_flatData?['squareFeet'] != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    height: 1,
+                    color: AppColors.border,
+                  ),
+                  const SizedBox(height: 16),
+                  _DetailItem(
+                    label: 'Area',
+                    value: '${_flatData!['squareFeet']} sq.ft',
+                  ),
+                ],
+                if (_user?.emergencyContact != null && _user!.emergencyContact!.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    height: 1,
+                    color: AppColors.border,
+                  ),
+                  const SizedBox(height: 16),
+                  _DetailItem(
+                    label: 'Emergency Contact',
+                    value: _user!.emergencyContact!,
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -363,11 +489,15 @@ class _ResidentProfileScreenState extends State<ResidentProfileScreen> {
           },
         ),
         _MenuItem(
-          icon: Icons.lock,
+          icon: Icons.lock_outline,
           title: 'Change Password',
           onTap: () {
-            print('🖱️ [FLUTTER] Change password tapped');
-            // TODO: Navigate to change password screen
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ChangePasswordScreen(),
+              ),
+            );
           },
         ),
       ],
@@ -458,25 +588,30 @@ class _DetailItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.grey,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -519,18 +654,45 @@ class _MenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: ListTile(
-        leading: Icon(icon, color: textColor ?? Colors.grey.shade700),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: (textColor ?? AppColors.primary).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            color: textColor ?? AppColors.primary,
+            size: 20,
+          ),
+        ),
         title: Text(
           title,
-          style: TextStyle(color: textColor),
+          style: TextStyle(
+            color: textColor ?? AppColors.textPrimary,
+            fontWeight: FontWeight.w500,
+            fontSize: 16,
+          ),
         ),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        trailing: Icon(
+          Icons.arrow_forward_ios,
+          size: 16,
+          color: textColor ?? AppColors.textLight,
+        ),
         onTap: onTap,
       ),
     );
@@ -553,14 +715,40 @@ class _SwitchMenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: ListTile(
-        leading: Icon(icon, color: Colors.grey.shade700),
-        title: Text(title),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            color: AppColors.primary,
+            size: 20,
+          ),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w500,
+            fontSize: 16,
+          ),
+        ),
         trailing: Switch(
           value: value,
           onChanged: onChanged,
@@ -570,6 +758,7 @@ class _SwitchMenuItem extends StatelessWidget {
     );
   }
 }
+
 
 
 

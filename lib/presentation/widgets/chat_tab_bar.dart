@@ -29,16 +29,12 @@ class ChatTabBar extends StatelessWidget {
   
   /// Unread count for My Chats tab
   final int myChatsUnreadCount;
-  
-  /// Unread count for Complaints tab
-  final int complaintsUnreadCount;
 
   const ChatTabBar({
     super.key,
     required this.controller,
     this.communityUnreadCount = 0,
     this.myChatsUnreadCount = 0,
-    this.complaintsUnreadCount = 0,
   });
 
   @override
@@ -80,11 +76,6 @@ class ChatTabBar extends StatelessWidget {
               icon: Icons.chat_bubble_rounded,
               label: 'My Chats',
               unreadCount: myChatsUnreadCount,
-            ),
-            _ChatTab(
-              icon: Icons.warning_rounded,
-              label: 'Complaints',
-              unreadCount: complaintsUnreadCount,
             ),
           ],
         ),

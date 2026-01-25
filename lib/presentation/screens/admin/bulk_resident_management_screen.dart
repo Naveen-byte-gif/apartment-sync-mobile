@@ -5,6 +5,7 @@ import '../../../data/models/user_data.dart';
 import 'create_user_screen.dart';
 import '../complaints/resident_complaints_screen.dart';
 import '../payments/payments_screen.dart';
+import '../chat/p2p_chat_screen.dart';
 import '../../widgets/app_sidebar.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
@@ -26,6 +27,7 @@ class _BulkResidentManagementScreenState
   bool _isLoading = true;
   bool _isSelectionMode = false;
   String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
   Map<String, dynamic>? _statistics;
   String? _selectedBuildingCode;
   List<Map<String, dynamic>> _allBuildings = [];
@@ -48,6 +50,12 @@ class _BulkResidentManagementScreenState
     super.initState();
     _loadBuildings();
     _setupSocketListeners();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _setupSocketListeners() {
@@ -77,15 +85,18 @@ class _BulkResidentManagementScreenState
           _allBuildings = List<Map<String, dynamic>>.from(
             response['data']?['buildings'] ?? [],
           );
-          
+
           // Validate stored building code against fetched buildings
           if (_allBuildings.isNotEmpty) {
-            final storedCode = StorageService.getString(AppConstants.selectedBuildingKey);
-            
+            final storedCode = StorageService.getString(
+              AppConstants.selectedBuildingKey,
+            );
+
             // Check if stored code exists in the fetched buildings
-            final isValidCode = storedCode != null && 
+            final isValidCode =
+                storedCode != null &&
                 _allBuildings.any((b) => b['code'] == storedCode);
-            
+
             if (isValidCode) {
               _selectedBuildingCode = storedCode;
             } else {
@@ -184,6 +195,23 @@ class _BulkResidentManagementScreenState
     setState(() {
       _filteredResidents = List.from(_residents);
     });
+  }
+
+  List<String> _getUniqueFloors() {
+    final floors = <int>{};
+    for (var resident in _residents) {
+      final floorNumber = resident['floorNumber'];
+      if (floorNumber != null) {
+        final floor = floorNumber is int
+            ? floorNumber
+            : (floorNumber is String ? int.tryParse(floorNumber) : null);
+        if (floor != null) {
+          floors.add(floor);
+        }
+      }
+    }
+    final sortedFloors = floors.toList()..sort();
+    return ['all', ...sortedFloors.map((f) => f.toString())];
   }
 
   void _toggleSelection(String residentId) {
@@ -313,11 +341,13 @@ class _BulkResidentManagementScreenState
   @override
   Widget build(BuildContext context) {
     // Get building name for sidebar
-    final buildingName = _selectedBuildingCode != null && _allBuildings.isNotEmpty
+    final buildingName =
+        _selectedBuildingCode != null && _allBuildings.isNotEmpty
         ? _allBuildings.firstWhere(
-            (b) => b['code'] == _selectedBuildingCode,
-            orElse: () => {'name': ''},
-          )['name'] ?? ''
+                (b) => b['code'] == _selectedBuildingCode,
+                orElse: () => {'name': ''},
+              )['name'] ??
+              ''
         : null;
 
     return Scaffold(
@@ -330,29 +360,29 @@ class _BulkResidentManagementScreenState
         onBuildingSelected: (code) {
           setState(() {
             _selectedBuildingCode = code;
-            StorageService.setString(
-              AppConstants.selectedBuildingKey,
-              code,
-            );
+            StorageService.setString(AppConstants.selectedBuildingKey, code);
           });
           _loadResidents(resetPage: true);
         },
       ),
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Resident Management'),
-            if (_statistics != null)
-              Text(
-                '${_statistics!['total'] ?? 0} Total • ${_statistics!['pending'] ?? 0} Pending • ${_statistics!['highRisk'] ?? 0} High Risk',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.normal,
-                ),
+        centerTitle: false,
+        title: Padding(
+          padding: const EdgeInsets.only(left: 8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Resident Management',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.visible,
+                maxLines: 1,
               ),
-          ],
+            ],
+          ),
         ),
+        titleSpacing: 0,
         leading: Builder(
           builder: (context) => IconButton(
             icon: const Icon(Icons.menu),
@@ -360,10 +390,29 @@ class _BulkResidentManagementScreenState
           ),
         ),
         actions: [
-          if (_allBuildings.length > 1)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.apartment),
-              onSelected: (code) {
+          PopupMenuButton<String>(
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border, width: 1),
+              ),
+              child: const Icon(
+                Icons.more_vert,
+                color: AppColors.textPrimary,
+                size: 20,
+              ),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 8,
+            color: AppColors.surface,
+            offset: const Offset(0, 45),
+            onSelected: (action) {
+              if (action.startsWith('building_')) {
+                final code = action.replaceFirst('building_', '');
                 setState(() {
                   _selectedBuildingCode = code;
                   StorageService.setString(
@@ -372,57 +421,266 @@ class _BulkResidentManagementScreenState
                   );
                 });
                 _loadResidents(resetPage: true);
-              },
-              itemBuilder: (context) =>
-                  _allBuildings.map<PopupMenuEntry<String>>((building) {
-                    return PopupMenuItem<String>(
-                      value: building['code']?.toString() ?? '',
+              } else {
+                switch (action) {
+                  case 'add':
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const CreateUserScreen(),
+                      ),
+                    ).then((_) => _loadResidents());
+                    break;
+                  case 'refresh':
+                    _loadResidents();
+                    break;
+                  case 'filter':
+                    setState(() => _showFilters = !_showFilters);
+                    break;
+                }
+              }
+            },
+            itemBuilder: (context) => <PopupMenuEntry<String>>[
+              if (_allBuildings.length > 1) ...[
+                PopupMenuItem<String>(
+                  enabled: false,
+                  height: 40,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      'SELECT BUILDING',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const PopupMenuDivider(height: 1, color: AppColors.divider),
+                ..._allBuildings.map<PopupMenuItem<String>>((building) {
+                  final code = building['code']?.toString() ?? '';
+                  final isSelected = _selectedBuildingCode == code;
+                  return PopupMenuItem<String>(
+                    value: 'building_$code',
+                    height: 48,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primary.withOpacity(0.08)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       child: Row(
                         children: [
-                          if (_selectedBuildingCode == building['code'])
-                            const Icon(
-                              Icons.check,
-                              color: AppColors.primary,
-                              size: 16,
-                            )
-                          else
-                            const SizedBox(width: 16),
-                          Text(building['name'] ?? building['code'] ?? ''),
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? AppColors.primary.withOpacity(0.15)
+                                  : AppColors.textSecondary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(
+                              Icons.apartment,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              building['name'] ?? building['code'] ?? '',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (isSelected)
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check,
+                                color: Colors.white,
+                                size: 14,
+                              ),
+                            ),
                         ],
                       ),
-                    );
-                  }).toList(),
-            ),
-          IconButton(
-            icon: Icon(
-              _showFilters ? Icons.filter_list : Icons.filter_list_outlined,
-            ),
-            onPressed: () => setState(() => _showFilters = !_showFilters),
-            tooltip: 'Filters',
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CreateUserScreen()),
-              ).then((_) => _loadResidents());
-            },
-            tooltip: 'Add Resident',
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _loadResidents(),
-            tooltip: 'Refresh',
+                    ),
+                  );
+                }),
+                const PopupMenuDivider(height: 1, color: AppColors.divider),
+              ],
+              PopupMenuItem<String>(
+                value: 'add',
+                height: 52,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.primary.withOpacity(0.2),
+                              AppColors.primary.withOpacity(0.1),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.primary.withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.add_circle_outline,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Text(
+                        'Add Resident',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'refresh',
+                height: 52,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.info.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppColors.info.withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.refresh,
+                          color: AppColors.info,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      const Text(
+                        'Refresh',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              PopupMenuItem<String>(
+                value: 'filter',
+                height: 52,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _showFilters
+                        ? AppColors.success.withOpacity(0.08)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _showFilters
+                              ? AppColors.success.withOpacity(0.15)
+                              : AppColors.textSecondary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _showFilters
+                                ? AppColors.success.withOpacity(0.3)
+                                : AppColors.textSecondary.withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: Icon(
+                          _showFilters
+                              ? Icons.filter_list
+                              : Icons.filter_list_outlined,
+                          color: _showFilters
+                              ? AppColors.success
+                              : AppColors.textPrimary,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
+                        _showFilters ? 'Hide Filters' : 'Show Filters',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: _showFilters
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: _showFilters
+                              ? AppColors.success
+                              : AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
       body: Column(
         children: [
-          // Statistics Cards
-          if (_statistics != null) _buildStatisticsBar(),
           // Search Bar
           _buildSearchBar(),
+          // Statistics Cards
+          if (_statistics != null) _buildStatisticsBar(),
           // Filters
           if (_showFilters) _buildFilters(),
           // Bulk Action Toolbar
@@ -437,6 +695,60 @@ class _BulkResidentManagementScreenState
                 : _buildResidentsList(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: AppColors.surface,
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Search by name, flat, phone...',
+          prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 20),
+                  color: AppColors.textSecondary,
+                  onPressed: () {
+                    setState(() {
+                      _searchQuery = '';
+                      _searchController.clear();
+                    });
+                    _loadResidents(resetPage: true);
+                  },
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppColors.border, width: 1),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppColors.border, width: 1),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppColors.primary, width: 2),
+          ),
+          filled: true,
+          fillColor: AppColors.background,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+        ),
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+          });
+          if (value.isEmpty) {
+            _loadResidents(resetPage: true);
+          }
+        },
+        onSubmitted: (_) => _loadResidents(resetPage: true),
       ),
     );
   }
@@ -473,72 +785,6 @@ class _BulkResidentManagementScreenState
               icon: Icons.check_circle,
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _StatCard(
-              label: 'High Risk',
-              value: '${_statistics!['highRisk'] ?? 0}',
-              color: AppColors.error,
-              icon: Icons.warning,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      color: AppColors.surface,
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search by name, flat, phone...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          setState(() => _searchQuery = '');
-                          _loadResidents(resetPage: true);
-                        },
-                      )
-                    : null,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: AppColors.background,
-              ),
-              onChanged: (value) {
-                setState(() => _searchQuery = value);
-                if (value.isEmpty) {
-                  _loadResidents(resetPage: true);
-                }
-              },
-              onSubmitted: (_) => _loadResidents(resetPage: true),
-            ),
-          ),
-          const SizedBox(width: 12),
-          IconButton(
-            icon: Icon(
-              _isSelectionMode
-                  ? Icons.check_box
-                  : Icons.check_box_outline_blank,
-            ),
-            onPressed: () {
-              setState(() {
-                _isSelectionMode = !_isSelectionMode;
-                if (!_isSelectionMode) {
-                  _selectedResidentIds.clear();
-                }
-              });
-            },
-            tooltip: 'Selection Mode',
-          ),
         ],
       ),
     );
@@ -550,13 +796,18 @@ class _BulkResidentManagementScreenState
       color: AppColors.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
                 'Filters',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: AppColors.textPrimary,
+                ),
               ),
               TextButton(
                 onPressed: () {
@@ -570,7 +821,10 @@ class _BulkResidentManagementScreenState
                   });
                   _loadResidents(resetPage: true);
                 },
-                child: const Text('Clear All'),
+                child: const Text(
+                  'Clear All',
+                  style: TextStyle(color: AppColors.primary),
+                ),
               ),
             ],
           ),
@@ -578,6 +832,8 @@ class _BulkResidentManagementScreenState
           Wrap(
             spacing: 8,
             runSpacing: 8,
+            alignment: WrapAlignment.start,
+            crossAxisAlignment: WrapCrossAlignment.end,
             children: [
               _FilterChip(
                 label: 'Status',
@@ -585,6 +841,15 @@ class _BulkResidentManagementScreenState
                 options: ['all', 'pending', 'active', 'suspended'],
                 onChanged: (value) {
                   setState(() => _filterStatus = value == 'all' ? null : value);
+                  _loadResidents(resetPage: true);
+                },
+              ),
+              _FilterChip(
+                label: 'Floor',
+                value: _filterFloor,
+                options: _getUniqueFloors(),
+                onChanged: (value) {
+                  setState(() => _filterFloor = value == 'all' ? null : value);
                   _loadResidents(resetPage: true);
                 },
               ),
@@ -878,28 +1143,24 @@ class _BulkResidentManagementScreenState
     );
   }
 
-  void _navigateToSendMessage(Map<String, dynamic> resident) async {
+  void _navigateToSendMessage(Map<String, dynamic> resident) {
     final residentId = _getResidentId(resident);
     final residentName = resident['fullName'] ?? 'Resident';
-    final residentPhone = resident['phoneNumber'] ?? '';
+    final residentRole = resident['role'] ?? 'resident';
+    final residentProfilePicture =
+        resident['profilePicture']?.toString() ??
+        resident['profilePictureUrl']?.toString();
 
-    // Show message options (SMS)
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _MessageOptionsSheet(
-        residentName: residentName,
-        residentPhone: residentPhone,
-        residentId: residentId,
-        onSendSMS: () async {
-          Navigator.pop(context);
-          final uri = Uri.parse('sms:$residentPhone');
-          if (await canLaunchUrl(uri)) {
-            await launchUrl(uri);
-          } else if (context.mounted) {
-            AppMessageHandler.showError(context, 'Cannot open SMS app');
-          }
-        },
+    // Navigate directly to P2P chat screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => P2PChatScreen(
+          receiverId: residentId,
+          receiverName: residentName,
+          receiverRole: residentRole,
+          receiverProfilePicture: residentProfilePicture,
+        ),
       ),
     );
   }
@@ -921,6 +1182,57 @@ class _BulkResidentManagementScreenState
         builder: (_) => ResidentComplaintsScreen(
           residentId: residentId,
           residentName: residentName,
+        ),
+      ),
+    );
+  }
+}
+
+// Action Button Widget
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+  final String tooltip;
+  final bool isActive;
+  final Color? color;
+
+  const _ActionButton({
+    required this.icon,
+    required this.onPressed,
+    required this.tooltip,
+    this.isActive = false,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final buttonColor = color ?? AppColors.textPrimary;
+    final backgroundColor = isActive
+        ? buttonColor.withOpacity(0.1)
+        : AppColors.background;
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isActive
+                    ? buttonColor.withOpacity(0.3)
+                    : AppColors.border,
+                width: 1,
+              ),
+            ),
+            child: Icon(icon, color: buttonColor, size: 20),
+          ),
         ),
       ),
     );
@@ -1025,6 +1337,10 @@ class _FilterChip extends StatelessWidget {
       ),
       onSelected: onChanged,
       itemBuilder: (context) => options.map((option) {
+        // Display numeric values naturally, others in uppercase
+        final displayText = option == 'all'
+            ? 'All'
+            : (int.tryParse(option) != null ? option : option.toUpperCase());
         return PopupMenuItem(
           value: option,
           child: Row(
@@ -1033,7 +1349,7 @@ class _FilterChip extends StatelessWidget {
                 const Icon(Icons.check, color: AppColors.primary, size: 16)
               else
                 const SizedBox(width: 16),
-              Text(option.toUpperCase()),
+              Text(displayText),
             ],
           ),
         );
@@ -1105,13 +1421,10 @@ class _ResidentCard extends StatelessWidget {
       },
       child: Card(
         margin: const EdgeInsets.only(bottom: 12),
-        elevation: isSelected ? 4 : 2,
+        elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: isSelected ? AppColors.primary : Colors.transparent,
-            width: isSelected ? 2 : 0,
-          ),
+          side: BorderSide(color: Colors.grey.shade200, width: 1),
         ),
         child: InkWell(
           onTap: onTap,
@@ -1120,46 +1433,11 @@ class _ResidentCard extends StatelessWidget {
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              gradient: isSelected
-                  ? LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.primary.withOpacity(0.05),
-                        Colors.transparent,
-                      ],
-                    )
-                  : null,
+              color: Colors.white,
             ),
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Checkbox
-                if (isSelected)
-                  Container(
-                    margin: const EdgeInsets.only(right: 12),
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  )
-                else
-                  Container(
-                    margin: const EdgeInsets.only(right: 12),
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AppColors.border),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
                 // Avatar with status indicator
                 Stack(
                   children: [
@@ -1204,9 +1482,13 @@ class _ResidentCard extends StatelessWidget {
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
                               ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
+                          const SizedBox(width: 8),
                           // Risk Badge
                           if (riskLevel != 'low')
                             Container(
@@ -1219,46 +1501,71 @@ class _ResidentCard extends StatelessWidget {
                                   riskLevel,
                                 ).withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                riskLevel.toUpperCase(),
-                                style: TextStyle(
-                                  color: _getRiskColor(riskLevel),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                                border: Border.all(
+                                  color: _getRiskColor(
+                                    riskLevel,
+                                  ).withOpacity(0.3),
+                                  width: 1,
                                 ),
                               ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _getRiskColor(riskLevel),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    riskLevel.toUpperCase(),
+                                    style: TextStyle(
+                                      color: _getRiskColor(riskLevel),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.home_outlined,
+                            size: 14,
+                            color: Colors.blue.shade600,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Floor ${resident['floorNumber'] ?? 'N/A'} • Flat ${resident['flatNumber'] ?? 'N/A'}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 4),
                       Row(
                         children: [
                           Icon(
-                            Icons.home,
+                            Icons.phone_outlined,
                             size: 14,
                             color: AppColors.textSecondary,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Floor ${resident['floorNumber'] ?? 'N/A'} • Flat ${resident['flatNumber'] ?? 'N/A'}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.phone,
-                            size: 12,
-                            color: AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               resident['phoneNumber'] ?? 'N/A',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 12,
                                 color: AppColors.textSecondary,
                               ),
                               overflow: TextOverflow.ellipsis,
@@ -1372,7 +1679,7 @@ class _ResidentCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Actions
+                // Actions Menu
                 Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -1381,12 +1688,12 @@ class _ResidentCard extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
+                        color: Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
                         Icons.more_vert,
-                        color: AppColors.primary,
+                        color: AppColors.textSecondary,
                         size: 20,
                       ),
                     ),
@@ -1458,7 +1765,7 @@ class _ResidentActionSheetState extends State<_ResidentActionSheet> {
 
   Future<void> _updateStatus(String newStatus) async {
     final oldStatus = widget.resident['status'] ?? 'pending';
-    
+
     // Show confirmation dialog for critical status changes
     if (newStatus == 'suspended' || newStatus == 'rejected') {
       final confirmed = await showDialog<bool>(
@@ -1477,9 +1784,7 @@ class _ResidentActionSheetState extends State<_ResidentActionSheet> {
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.error,
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
               child: const Text('Confirm'),
             ),
           ],
@@ -1491,15 +1796,20 @@ class _ResidentActionSheetState extends State<_ResidentActionSheet> {
 
     setState(() => _isUpdatingStatus = true);
     try {
-      final residentId = (widget.resident['_id'] ?? widget.resident['id']).toString();
-      
+      final residentId = (widget.resident['_id'] ?? widget.resident['id'])
+          .toString();
+
       // Use bulk action endpoint for single resident
       final response = await ApiService.post(
         ApiConstants.adminResidentsBulkAction,
         {
-          'action': newStatus == 'active' ? 'approve' : 
-                    newStatus == 'rejected' ? 'reject' :
-                    newStatus == 'suspended' ? 'suspend' : 'activate',
+          'action': newStatus == 'active'
+              ? 'approve'
+              : newStatus == 'rejected'
+              ? 'reject'
+              : newStatus == 'suspended'
+              ? 'suspend'
+              : 'activate',
           'residentIds': [residentId],
           'reason': 'Status changed from $oldStatus to $newStatus',
         },
@@ -1607,7 +1917,7 @@ class _ResidentActionSheetState extends State<_ResidentActionSheet> {
               ),
             ),
             const Divider(height: 1),
-            
+
             // Status Change Section (Similar to Complaints)
             Padding(
               padding: const EdgeInsets.all(24),
@@ -1623,7 +1933,7 @@ class _ResidentActionSheetState extends State<_ResidentActionSheet> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Status Dropdown (Same style as Complaints)
                   const Text(
                     'Status',
@@ -1644,25 +1954,28 @@ class _ResidentActionSheetState extends State<_ResidentActionSheet> {
                       fillColor: AppColors.background,
                     ),
                     items: ['pending', 'active', 'suspended', 'rejected']
-                        .map((s) => DropdownMenuItem(
-                              value: s,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _getStatusIcon(s),
-                                    size: 18,
-                                    color: _getStatusColor(s),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(s.toUpperCase()),
-                                ],
-                              ),
-                            ))
+                        .map(
+                          (s) => DropdownMenuItem(
+                            value: s,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _getStatusIcon(s),
+                                  size: 18,
+                                  color: _getStatusColor(s),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(s.toUpperCase()),
+                              ],
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: _isUpdatingStatus
                         ? null
                         : (newStatus) {
-                            if (newStatus != null && newStatus != currentStatus) {
+                            if (newStatus != null &&
+                                newStatus != currentStatus) {
                               _updateStatus(newStatus);
                             }
                           },
@@ -1676,7 +1989,7 @@ class _ResidentActionSheetState extends State<_ResidentActionSheet> {
               ),
             ),
             const Divider(height: 1),
-            
+
             // Actions
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -2291,7 +2604,10 @@ class _ResidentDetailsScreenState extends State<_ResidentDetailsScreen> {
     }
   }
 
-  Widget _buildStatusChangeSection(Map<String, dynamic> resident, String currentStatus) {
+  Widget _buildStatusChangeSection(
+    Map<String, dynamic> resident,
+    String currentStatus,
+  ) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -2317,7 +2633,7 @@ class _ResidentDetailsScreenState extends State<_ResidentDetailsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // Status Dropdown (Same style as Complaints)
           const Text(
             'Status',
@@ -2338,20 +2654,22 @@ class _ResidentDetailsScreenState extends State<_ResidentDetailsScreen> {
               fillColor: AppColors.background,
             ),
             items: ['pending', 'active', 'suspended', 'rejected']
-                .map((s) => DropdownMenuItem(
-                      value: s,
-                      child: Row(
-                        children: [
-                          Icon(
-                            _getStatusIcon(s),
-                            size: 18,
-                            color: _getStatusColor(s),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(s.toUpperCase()),
-                        ],
-                      ),
-                    ))
+                .map(
+                  (s) => DropdownMenuItem(
+                    value: s,
+                    child: Row(
+                      children: [
+                        Icon(
+                          _getStatusIcon(s),
+                          size: 18,
+                          color: _getStatusColor(s),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(s.toUpperCase()),
+                      ],
+                    ),
+                  ),
+                )
                 .toList(),
             onChanged: _isUpdatingStatus
                 ? null
@@ -2371,9 +2689,12 @@ class _ResidentDetailsScreenState extends State<_ResidentDetailsScreen> {
     );
   }
 
-  Future<void> _updateStatus(String newStatus, Map<String, dynamic> resident) async {
+  Future<void> _updateStatus(
+    String newStatus,
+    Map<String, dynamic> resident,
+  ) async {
     final oldStatus = resident['status'] ?? 'pending';
-    
+
     // Show confirmation dialog for critical status changes
     if (newStatus == 'suspended' || newStatus == 'rejected') {
       final confirmed = await showDialog<bool>(
@@ -2392,9 +2713,7 @@ class _ResidentDetailsScreenState extends State<_ResidentDetailsScreen> {
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.error,
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
               child: const Text('Confirm'),
             ),
           ],
@@ -2407,14 +2726,18 @@ class _ResidentDetailsScreenState extends State<_ResidentDetailsScreen> {
     setState(() => _isUpdatingStatus = true);
     try {
       final residentId = (resident['_id'] ?? resident['id']).toString();
-      
+
       // Use bulk action endpoint for single resident
       final response = await ApiService.post(
         ApiConstants.adminResidentsBulkAction,
         {
-          'action': newStatus == 'active' ? 'approve' : 
-                    newStatus == 'rejected' ? 'reject' :
-                    newStatus == 'suspended' ? 'suspend' : 'activate',
+          'action': newStatus == 'active'
+              ? 'approve'
+              : newStatus == 'rejected'
+              ? 'reject'
+              : newStatus == 'suspended'
+              ? 'suspend'
+              : 'activate',
           'residentIds': [residentId],
           'reason': 'Status changed from $oldStatus to $newStatus',
         },

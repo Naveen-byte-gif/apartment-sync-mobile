@@ -301,7 +301,25 @@ class P2PChat {
   }
 
   int getUnreadCount(String userId) {
-    return unreadCount[userId] ?? 0;
+    if (userId.isEmpty) return 0;
+    
+    // Normalize userId to string format for comparison
+    final normalizedUserId = userId.toString().trim();
+    
+    // Try exact match first
+    if (unreadCount.containsKey(normalizedUserId)) {
+      return unreadCount[normalizedUserId] ?? 0;
+    }
+    
+    // Try matching with normalized keys (handle ObjectId string format)
+    for (final key in unreadCount.keys) {
+      final normalizedKey = key.toString().trim();
+      if (normalizedKey == normalizedUserId) {
+        return unreadCount[key] ?? 0;
+      }
+    }
+    
+    return 0;
   }
 
   P2PMessage? get lastMessage {

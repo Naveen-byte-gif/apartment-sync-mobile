@@ -5,9 +5,17 @@ import 'package:intl/intl.dart';
 import '../complaints/complaint_detail_screen.dart';
 import 'admin_complaint_detail_screen.dart';
 import '../../widgets/app_sidebar.dart';
+import '../../widgets/complaint_filter_mega_menu.dart';
 
 class ComplaintsManagementScreen extends StatefulWidget {
-  const ComplaintsManagementScreen({super.key});
+  final String? filterUserId;
+  final String? filterUserName;
+
+  const ComplaintsManagementScreen({
+    super.key,
+    this.filterUserId,
+    this.filterUserName,
+  });
 
   @override
   State<ComplaintsManagementScreen> createState() =>
@@ -22,38 +30,90 @@ class ComplaintsManagementScreenState
   String _selectedStatus = 'all';
   String _selectedCategory = 'all';
   String _selectedPriority = 'all';
-  String _selectedWing = 'all';
-  String _selectedBuildingFilter = 'all';
   String _searchQuery = '';
   DateTime? _startDate;
   DateTime? _endDate;
-  bool _showFilters = false;
   List<Map<String, dynamic>> _allBuildings = [];
   String? _selectedBuildingCode;
   final TextEditingController _searchController = TextEditingController();
+  String? _userRole;
 
   void toggleFilters() {
-    setState(() {
-      _showFilters = !_showFilters;
-    });
+    _showFilterMegaMenu();
+  }
+
+  Future<void> _showFilterMegaMenu() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ComplaintFilterMegaMenu(
+        selectedStatus: _selectedStatus,
+        selectedCategory: _selectedCategory,
+        selectedPriority: _selectedPriority,
+        startDate: _startDate,
+        endDate: _endDate,
+        activeFilterCount: _getActiveFilterCount(),
+        onStatusChanged: (value) {
+          setState(() {
+            _selectedStatus = value;
+            _applyFilters();
+          });
+        },
+        onCategoryChanged: (value) {
+          setState(() {
+            _selectedCategory = value;
+            _applyFilters();
+          });
+        },
+        onPriorityChanged: (value) {
+          setState(() {
+            _selectedPriority = value;
+            _applyFilters();
+          });
+        },
+        onDateRangeSelected: (start, end) {
+          setState(() {
+            _startDate = start;
+            _endDate = end;
+            _applyFilters();
+          });
+        },
+        onClearAll: () {
+          _clearFilters();
+          Navigator.pop(context);
+        },
+        onApply: () {
+          Navigator.pop(context);
+        },
+      ),
+    );
   }
 
   void refreshComplaints() {
     _loadComplaints();
   }
 
-  // Statistics
-  Map<String, int> _statistics = {
-    'total': 0,
-    'open': 0,
-    'inProgress': 0,
-    'resolved': 0,
-    'rejected': 0,
-  };
+  String? _getUserRole() {
+    try {
+      final userJson = StorageService.getString(AppConstants.userKey);
+      if (userJson != null) {
+        final userData = jsonDecode(userJson);
+        return userData['role']?.toString();
+      }
+    } catch (e) {
+      print('❌ [FLUTTER] Error getting user role: $e');
+    }
+    return null;
+  }
+
+  bool get _isStaff => _getUserRole() == 'staff';
+  bool get _isAdmin => _getUserRole() == 'admin';
 
   @override
   void initState() {
     super.initState();
+    _userRole = _getUserRole();
     _loadBuildings();
     _loadComplaints();
     _setupSocketListeners();
@@ -67,21 +127,27 @@ class ComplaintsManagementScreenState
 
   Future<void> _loadBuildings() async {
     try {
-      final response = await ApiService.get(ApiConstants.adminBuildings);
+      final buildingsEndpoint = _isStaff 
+          ? ApiConstants.staffBuildings 
+          : ApiConstants.adminBuildings;
+      final response = await ApiService.get(buildingsEndpoint);
       if (response['success'] == true) {
         setState(() {
           _allBuildings = List<Map<String, dynamic>>.from(
             response['data']?['buildings'] ?? [],
           );
-          
+
           // Validate stored building code against fetched buildings
           if (_allBuildings.isNotEmpty) {
-            final storedCode = StorageService.getString(AppConstants.selectedBuildingKey);
-            
+            final storedCode = StorageService.getString(
+              AppConstants.selectedBuildingKey,
+            );
+
             // Check if stored code exists in the fetched buildings
-            final isValidCode = storedCode != null && 
+            final isValidCode =
+                storedCode != null &&
                 _allBuildings.any((b) => b['code'] == storedCode);
-            
+
             if (isValidCode) {
               _selectedBuildingCode = storedCode;
             } else {
@@ -149,7 +215,9 @@ class ComplaintsManagementScreenState
     print('🖱️ [FLUTTER] Loading complaints...');
     setState(() => _isLoading = true);
     try {
-      String endpoint = ApiConstants.adminComplaints;
+      String endpoint = _isStaff 
+          ? ApiConstants.staffComplaints 
+          : ApiConstants.adminComplaints;
       if (_selectedBuildingCode != null) {
         endpoint = ApiConstants.addBuildingCode(
           endpoint,
@@ -161,8 +229,6 @@ class ComplaintsManagementScreenState
 
       if (response['success'] == true) {
         final complaintsList = response['data']?['complaints'] as List?;
-        final statistics =
-            response['data']?['statistics'] as Map<String, dynamic>?;
 
         if (complaintsList != null) {
           setState(() {
@@ -201,18 +267,6 @@ class ComplaintsManagementScreenState
                 return dateB.compareTo(dateA);
               });
 
-            // Calculate statistics from complaints if API doesn't provide them
-            if (statistics != null) {
-              _statistics = {
-                'total': (statistics['total'] as num?)?.toInt() ?? 0,
-                'open': (statistics['open'] as num?)?.toInt() ?? 0,
-                'inProgress': (statistics['inProgress'] as num?)?.toInt() ?? 0,
-                'resolved': (statistics['resolved'] as num?)?.toInt() ?? 0,
-                'rejected': (statistics['rejected'] as num?)?.toInt() ?? 0,
-              };
-            } else {
-              _calculateStatistics();
-            }
             _applyFilters();
           });
           print('✅ [FLUTTER] Loaded ${_complaints.length} complaints');
@@ -232,46 +286,24 @@ class ComplaintsManagementScreenState
     }
   }
 
-  void _calculateStatistics() {
-    int total = _complaints.length;
-    int open = 0;
-    int inProgress = 0;
-    int resolved = 0;
-    int rejected = 0;
-
-    for (var complaint in _complaints) {
-      final status = (complaint['status']?.toString() ?? '').toLowerCase();
-      if (status == 'open') {
-        open++;
-      } else if (status == 'in progress' || status == 'assigned') {
-        inProgress++;
-      } else if (status == 'resolved' || status == 'closed') {
-        resolved++;
-      } else if (status == 'rejected' || status == 'cancelled') {
-        rejected++;
-      }
-    }
-
-    _statistics = {
-      'total': total,
-      'open': open,
-      'inProgress': inProgress,
-      'resolved': resolved,
-      'rejected': rejected,
-    };
-  }
-
   void _applyFilters() {
     setState(() {
       _filteredComplaints = _complaints.where((complaint) {
-        // Building filter
-        if (_selectedBuildingFilter != 'all') {
-          final createdBy = complaint['createdBy'] ?? {};
-          final apartmentCode = createdBy['apartmentCode']?.toString();
-          if (apartmentCode != _selectedBuildingFilter) {
+        // User filter (filter by specific user ID)
+        if (widget.filterUserId != null && widget.filterUserId!.isNotEmpty) {
+          final createdBy = complaint['createdBy'];
+          String? complaintUserId;
+          if (createdBy is String) {
+            complaintUserId = createdBy;
+          } else if (createdBy is Map) {
+            complaintUserId =
+                createdBy['_id']?.toString() ?? createdBy['id']?.toString();
+          }
+          if (complaintUserId != widget.filterUserId) {
             return false;
           }
         }
+
         // Status filter
         if (_selectedStatus != 'all' &&
             complaint['status'] != _selectedStatus) {
@@ -286,13 +318,6 @@ class ComplaintsManagementScreenState
         if (_selectedPriority != 'all' &&
             complaint['priority'] != _selectedPriority) {
           return false;
-        }
-        // Wing filter
-        if (_selectedWing != 'all') {
-          final createdBy = complaint['createdBy'] ?? {};
-          if (createdBy['wing'] != _selectedWing) {
-            return false;
-          }
         }
         // Date range filter
         if (_startDate != null || _endDate != null) {
@@ -397,8 +422,6 @@ class ComplaintsManagementScreenState
       _selectedStatus = 'all';
       _selectedCategory = 'all';
       _selectedPriority = 'all';
-      _selectedWing = 'all';
-      _selectedBuildingFilter = 'all';
       _startDate = null;
       _endDate = null;
       _searchQuery = '';
@@ -412,8 +435,6 @@ class ComplaintsManagementScreenState
     if (_selectedStatus != 'all') count++;
     if (_selectedCategory != 'all') count++;
     if (_selectedPriority != 'all') count++;
-    if (_selectedWing != 'all') count++;
-    if (_selectedBuildingFilter != 'all') count++;
     if (_startDate != null || _endDate != null) count++;
     if (_searchQuery.isNotEmpty) count++;
     return count;
@@ -443,6 +464,39 @@ class ComplaintsManagementScreenState
       );
     });
     return buildingCodes;
+  }
+
+  Future<void> _showBuildingSelector() async {
+    if (_allBuildings.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No buildings available'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final selectedCode = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _BuildingSelectorSheet(
+        buildings: _allBuildings,
+        selectedBuildingCode: _selectedBuildingCode,
+      ),
+    );
+
+    if (selectedCode != null && selectedCode != _selectedBuildingCode) {
+      setState(() {
+        _selectedBuildingCode = selectedCode;
+        StorageService.setString(
+          AppConstants.selectedBuildingKey,
+          selectedCode,
+        );
+      });
+      _loadComplaints();
+    }
   }
 
   @override
@@ -475,19 +529,11 @@ class ComplaintsManagementScreenState
         },
       ),
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Complaints Management'),
-            if (_statistics['total'] != null)
-              Text(
-                '${_statistics['total']} Total • ${_statistics['open'] ?? 0} Open • ${_statistics['inProgress'] ?? 0} In Progress',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.normal,
-                ),
-              ),
-          ],
+        title: Text(
+          widget.filterUserName != null
+              ? '${widget.filterUserName}\'s Complaints'
+              : 'Complaints Management',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18),
         ),
         leading: Builder(
           builder: (context) => IconButton(
@@ -498,7 +544,7 @@ class ComplaintsManagementScreenState
         actions: [
           if (activeFilterCount > 0)
             Container(
-              margin: const EdgeInsets.only(right: 8),
+              margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: AppColors.primary,
@@ -517,7 +563,9 @@ class ComplaintsManagementScreenState
             ),
           IconButton(
             icon: Icon(
-              _showFilters ? Icons.filter_list : Icons.filter_list_outlined,
+              activeFilterCount > 0
+                  ? Icons.filter_alt
+                  : Icons.filter_alt_outlined,
             ),
             onPressed: toggleFilters,
             tooltip: 'Filters',
@@ -529,538 +577,475 @@ class ComplaintsManagementScreenState
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Key Statistics Section - Modern Premium Design
-          Container(
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.primary.withOpacity(0.05),
-                  AppColors.secondary.withOpacity(0.05),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.primary.withOpacity(0.05),
+              AppColors.background,
+              AppColors.background,
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
+            // Top Section - Building & Search
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
                 ],
               ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: AppColors.primary.withOpacity(0.1),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.analytics_outlined,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Key Statistics',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                // Statistics Grid
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ModernStatCard(
-                        title: 'Total',
-                        value: _statistics['total'] ?? 0,
-                        icon: Icons.description_outlined,
-                        color: AppColors.info,
-                        gradient: [
-                          AppColors.info.withOpacity(0.1),
-                          AppColors.info.withOpacity(0.05),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _ModernStatCard(
-                        title: 'Open',
-                        value: _statistics['open'] ?? 0,
-                        icon: Icons.pending_actions,
-                        color: AppColors.error,
-                        gradient: [
-                          AppColors.error.withOpacity(0.1),
-                          AppColors.error.withOpacity(0.05),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _ModernStatCard(
-                        title: 'In Progress',
-                        value: _statistics['inProgress'] ?? 0,
-                        icon: Icons.sync,
-                        color: AppColors.warning,
-                        gradient: [
-                          AppColors.warning.withOpacity(0.1),
-                          AppColors.warning.withOpacity(0.05),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ModernStatCard(
-                        title: 'Resolved',
-                        value: _statistics['resolved'] ?? 0,
-                        icon: Icons.check_circle_outline,
-                        color: AppColors.success,
-                        gradient: [
-                          AppColors.success.withOpacity(0.1),
-                          AppColors.success.withOpacity(0.05),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _ModernStatCard(
-                        title: 'Rejected',
-                        value: _statistics['rejected'] ?? 0,
-                        icon: Icons.cancel_outlined,
-                        color: Colors.grey,
-                        gradient: [
-                          Colors.grey.withOpacity(0.1),
-                          Colors.grey.withOpacity(0.05),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    // Empty space for alignment
-                    Expanded(child: Container()),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Filters Section - Enhanced with smooth animation
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            height: _showFilters ? null : 0,
-            child: _showFilters
-                ? Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
+              child: Column(
+                children: [
+                  // Building Selector - Minimalist Design
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _showBuildingSelector,
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
                         ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: AppColors.primary.withOpacity(0.2),
+                          ),
+                        ),
+                        child: Row(
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
+                            Icon(
+                              Icons.location_city_rounded,
+                              color: AppColors.primary,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    buildingName ?? 'Select Building',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: buildingName != null
+                                          ? AppColors.textPrimary
+                                          : AppColors.textSecondary,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (buildingName != null)
+                                    Text(
+                                      'Tap to change',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.swap_horiz_rounded,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Search Bar - Compact Design
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.border.withOpacity(0.3),
+                            ),
+                          ),
+                          child: TextField(
+                            controller: _searchController
+                              ..text = _searchQuery
+                              ..selection = TextSelection.collapsed(
+                                offset: _searchQuery.length,
+                              ),
+                            decoration: InputDecoration(
+                              hintText: 'Search complaints...',
+                              hintStyle: TextStyle(
+                                fontSize: 14,
+                                color: AppColors.textSecondary.withOpacity(0.6),
+                              ),
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                color: AppColors.textSecondary,
+                                size: 20,
+                              ),
+                              suffixIcon: _searchQuery.isNotEmpty
+                                  ? IconButton(
+                                      icon: Icon(
+                                        Icons.clear_rounded,
+                                        size: 18,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        setState(() {
+                                          _searchQuery = '';
+                                          _applyFilters();
+                                        });
+                                      },
+                                    )
+                                  : null,
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _searchQuery = value;
+                                _applyFilters();
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Filter Toggle Button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: _getActiveFilterCount() > 0
+                              ? AppColors.primary
+                              : AppColors.background,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _getActiveFilterCount() > 0
+                                ? AppColors.primary
+                                : AppColors.border.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Stack(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons.tune_rounded,
+                                color: _getActiveFilterCount() > 0
+                                    ? Colors.white
+                                    : AppColors.textSecondary,
+                              ),
+                              onPressed: toggleFilters,
+                              tooltip: 'Filters',
+                            ),
+                            if (_getActiveFilterCount() > 0)
+                              Positioned(
+                                right: 8,
+                                top: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
+                                    color: Colors.red,
+                                    shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(
-                                    Icons.tune,
-                                    color: AppColors.primary,
-                                    size: 20,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 16,
+                                    minHeight: 16,
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                const Text(
-                                  'Filters',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                                if (activeFilterCount > 0) ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
+                                  child: Center(
                                     child: Text(
-                                      '$activeFilterCount active',
+                                      '${_getActiveFilterCount()}',
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 11,
+                                        fontSize: 9,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ),
-                                ],
-                              ],
-                            ),
-                            TextButton.icon(
-                              onPressed: _clearFilters,
-                              icon: const Icon(Icons.clear_all, size: 18),
-                              label: const Text('Clear All'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: AppColors.error,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        // Enhanced Search Bar
-                        TextField(
-                          controller: _searchController
-                            ..text = _searchQuery
-                            ..selection = TextSelection.collapsed(
-                              offset: _searchQuery.length,
-                            ),
-                          decoration: InputDecoration(
-                            hintText:
-                                'Search by title, ticket number, or resident name...',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      setState(() {
-                                        _searchQuery = '';
-                                        _applyFilters();
-                                      });
-                                    },
-                                  )
-                                : null,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: AppColors.border),
-                            ),
-                            filled: true,
-                            fillColor: AppColors.background,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
-                          onChanged: (value) {
-                            setState(() {
-                              _searchQuery = value;
-                              _applyFilters();
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        // Filter Chips Row
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            if (_getUniqueBuildingCodes().isNotEmpty)
-                              _FilterChip(
-                                label: 'Building',
-                                value: _selectedBuildingFilter,
-                                options: ['all', ..._getUniqueBuildingCodes()],
-                                getDisplayName: (code) {
-                                  if (code == 'all') return 'All';
-                                  final building = _allBuildings.firstWhere(
-                                    (b) => b['code'] == code,
-                                    orElse: () => {'name': code},
-                                  );
-                                  return building['name']?.toString() ?? code;
-                                },
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedBuildingFilter = value;
-                                    _applyFilters();
-                                  });
-                                },
-                              ),
-                            _FilterChip(
-                              label: 'Status',
-                              value: _selectedStatus,
-                              options: const [
-                                'all',
-                                'Open',
-                                'Assigned',
-                                'In Progress',
-                                'Resolved',
-                                'Closed',
-                                'Cancelled',
-                              ],
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedStatus = value;
-                                  _applyFilters();
-                                });
-                              },
-                            ),
-                            _FilterChip(
-                              label: 'Category',
-                              value: _selectedCategory,
-                              options: const [
-                                'all',
-                                'Electrical',
-                                'Plumbing',
-                                'Carpentry',
-                                'Cleaning',
-                                'Security',
-                              ],
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedCategory = value;
-                                  _applyFilters();
-                                });
-                              },
-                            ),
-                            _FilterChip(
-                              label: 'Priority',
-                              value: _selectedPriority,
-                              options: const [
-                                'all',
-                                'Emergency',
-                                'High',
-                                'Medium',
-                                'Low',
-                              ],
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedPriority = value;
-                                  _applyFilters();
-                                });
-                              },
-                            ),
-                            if (_getUniqueWings().isNotEmpty)
-                              _FilterChip(
-                                label: 'Wing',
-                                value: _selectedWing,
-                                options: ['all', ..._getUniqueWings()],
-                                onChanged: (value) {
-                                  setState(() {
-                                    _selectedWing = value;
-                                    _applyFilters();
-                                  });
-                                },
+                                ),
                               ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        // Date Range Picker
-                        InkWell(
-                          onTap: _selectDateRange,
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 16,
-                            ),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: (_startDate != null || _endDate != null)
-                                    ? AppColors.primary
-                                    : AppColors.border,
-                                width: (_startDate != null || _endDate != null)
-                                    ? 2
-                                    : 1,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              color: (_startDate != null || _endDate != null)
-                                  ? AppColors.primary.withOpacity(0.05)
-                                  : AppColors.background,
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.calendar_today,
-                                  size: 20,
-                                  color:
-                                      (_startDate != null || _endDate != null)
-                                      ? AppColors.primary
-                                      : AppColors.textSecondary,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    _startDate != null && _endDate != null
-                                        ? '${DateFormat('MMM d, yyyy').format(_startDate!)} - ${DateFormat('MMM d, yyyy').format(_endDate!)}'
-                                        : 'Select Date Range',
-                                    style: TextStyle(
-                                      color:
-                                          (_startDate != null ||
-                                              _endDate != null)
-                                          ? AppColors.textPrimary
-                                          : AppColors.textSecondary,
-                                      fontWeight:
-                                          (_startDate != null ||
-                                              _endDate != null)
-                                          ? FontWeight.w600
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                                if (_startDate != null || _endDate != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.clear, size: 18),
-                                    onPressed: () {
-                                      setState(() {
-                                        _startDate = null;
-                                        _endDate = null;
-                                        _applyFilters();
-                                      });
-                                    },
-                                    color: AppColors.textSecondary,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
 
-          // Complaints List
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredComplaints.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.description_outlined,
-                          size: 64,
-                          color: Colors.grey.shade400,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No complaints found',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        if (_selectedStatus != 'all' ||
-                            _selectedCategory != 'all' ||
-                            _selectedPriority != 'all' ||
-                            _selectedWing != 'all' ||
-                            _startDate != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 16),
-                            child: TextButton(
-                              onPressed: _clearFilters,
-                              child: const Text('Clear filters'),
-                            ),
-                          ),
-                      ],
-                    ),
-                  )
-                : RefreshIndicator(
-                    onRefresh: _loadComplaints,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _filteredComplaints.length,
-                      itemBuilder: (context, index) {
-                        final complaintRaw = _filteredComplaints[index];
-                        final complaint = complaintRaw is Map
-                            ? Map<String, dynamic>.from(complaintRaw)
-                            : <String, dynamic>{};
-                        final status =
-                            complaint['status']?.toString() ?? 'Unknown';
-                        final statusColor = _getStatusColor(status);
-                        final createdByRaw = complaint['createdBy'];
-                        final createdBy = createdByRaw is Map
-                            ? Map<String, dynamic>.from(createdByRaw)
-                            : <String, dynamic>{};
-                        final assignedToRaw = complaint['assignedTo'];
-                        final assignedTo = assignedToRaw is Map
-                            ? Map<String, dynamic>.from(assignedToRaw)
-                            : <String, dynamic>{};
-                        final staffRaw = assignedTo['staff'];
-                        final staff = staffRaw is Map
-                            ? Map<String, dynamic>.from(staffRaw)
-                            : <String, dynamic>{};
-                        final userRaw = staff['user'];
-                        final assignedStaff = userRaw is Map
-                            ? Map<String, dynamic>.from(userRaw)
-                            : <String, dynamic>{};
-                        final createdAt = complaint['createdAt'] != null
-                            ? DateTime.parse(complaint['createdAt'].toString())
-                            : null;
-                        final updatedAt = complaint['updatedAt'] != null
-                            ? DateTime.parse(complaint['updatedAt'].toString())
-                            : null;
-
-                        return _PremiumComplaintCard(
-                          complaint: complaint,
-                          status: status,
-                          statusColor: statusColor,
-                          createdBy: createdBy,
-                          assignedStaff: assignedStaff,
-                          createdAt: createdAt,
-                          updatedAt: updatedAt,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AdminComplaintDetailScreen(
-                                  complaintId:
-                                      complaint['_id']?.toString() ??
-                                      complaint['id']?.toString() ??
-                                      '',
-                                ),
-                              ),
-                            ).then((_) => _loadComplaints());
-                          },
-                          formatSLA: _formatSLA,
-                        );
+            // Status Segmented Control - Modern Design
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: Colors.white,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _StatusSegment(
+                      label: 'All',
+                      count: _filteredComplaints.length,
+                      isSelected: _selectedStatus == 'all',
+                      onTap: () {
+                        setState(() {
+                          _selectedStatus = 'all';
+                          _applyFilters();
+                        });
                       },
                     ),
-                  ),
-          ),
-        ],
+                    const SizedBox(width: 8),
+                    _StatusSegment(
+                      label: 'Open',
+                      count: _filteredComplaints
+                          .where(
+                            (c) =>
+                                (c['status']?.toString() ?? '').toLowerCase() ==
+                                'open',
+                          )
+                          .length,
+                      isSelected: _selectedStatus == 'Open',
+                      color: Colors.red,
+                      onTap: () {
+                        setState(() {
+                          _selectedStatus = 'Open';
+                          _applyFilters();
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _StatusSegment(
+                      label: 'Progress',
+                      count: _filteredComplaints.where((c) {
+                        final status = (c['status']?.toString() ?? '')
+                            .toLowerCase();
+                        return status == 'in progress' || status == 'assigned';
+                      }).length,
+                      isSelected: _selectedStatus == 'In Progress',
+                      color: Colors.blue,
+                      onTap: () {
+                        setState(() {
+                          _selectedStatus = 'In Progress';
+                          _applyFilters();
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _StatusSegment(
+                      label: 'Resolved',
+                      count: _filteredComplaints
+                          .where(
+                            (c) =>
+                                (c['status']?.toString() ?? '').toLowerCase() ==
+                                'resolved',
+                          )
+                          .length,
+                      isSelected: _selectedStatus == 'Resolved',
+                      color: Colors.green,
+                      onTap: () {
+                        setState(() {
+                          _selectedStatus = 'Resolved';
+                          _applyFilters();
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    _StatusSegment(
+                      label: 'Closed',
+                      count: _filteredComplaints
+                          .where(
+                            (c) =>
+                                (c['status']?.toString() ?? '').toLowerCase() ==
+                                'closed',
+                          )
+                          .length,
+                      isSelected: _selectedStatus == 'Closed',
+                      color: Colors.grey,
+                      onTap: () {
+                        setState(() {
+                          _selectedStatus = 'Closed';
+                          _applyFilters();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Complaints List
+            Expanded(
+              child: _isLoading
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Loading...',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : _filteredComplaints.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(40),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 120,
+                              height: 120,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.inbox_rounded,
+                                size: 60,
+                                color: AppColors.primary.withOpacity(0.5),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Text(
+                              'No Complaints',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _getActiveFilterCount() > 0
+                                  ? 'No results match your filters'
+                                  : 'Start managing complaints',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            if (_getActiveFilterCount() > 0) ...[
+                              const SizedBox(height: 24),
+                              OutlinedButton.icon(
+                                onPressed: _clearFilters,
+                                icon: const Icon(
+                                  Icons.refresh_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text('Reset Filters'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  side: BorderSide(color: AppColors.primary),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 20,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadComplaints,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _filteredComplaints.length,
+                        itemBuilder: (context, index) {
+                          final complaintRaw = _filteredComplaints[index];
+                          final complaint = complaintRaw is Map
+                              ? Map<String, dynamic>.from(complaintRaw)
+                              : <String, dynamic>{};
+                          final status =
+                              complaint['status']?.toString() ?? 'Unknown';
+                          final statusColor = _getStatusColor(status);
+                          final createdByRaw = complaint['createdBy'];
+                          final createdBy = createdByRaw is Map
+                              ? Map<String, dynamic>.from(createdByRaw)
+                              : <String, dynamic>{};
+                          final assignedToRaw = complaint['assignedTo'];
+                          final assignedTo = assignedToRaw is Map
+                              ? Map<String, dynamic>.from(assignedToRaw)
+                              : <String, dynamic>{};
+                          final staffRaw = assignedTo['staff'];
+                          final staff = staffRaw is Map
+                              ? Map<String, dynamic>.from(staffRaw)
+                              : <String, dynamic>{};
+                          final userRaw = staff['user'];
+                          final assignedStaff = userRaw is Map
+                              ? Map<String, dynamic>.from(userRaw)
+                              : <String, dynamic>{};
+                          final createdAt = complaint['createdAt'] != null
+                              ? DateTime.parse(
+                                  complaint['createdAt'].toString(),
+                                )
+                              : null;
+                          final updatedAt = complaint['updatedAt'] != null
+                              ? DateTime.parse(
+                                  complaint['updatedAt'].toString(),
+                                )
+                              : null;
+
+                          return _PremiumComplaintCard(
+                            complaint: complaint,
+                            status: status,
+                            statusColor: statusColor,
+                            createdBy: createdBy,
+                            assignedStaff: assignedStaff,
+                            createdAt: createdAt,
+                            updatedAt: updatedAt,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AdminComplaintDetailScreen(
+                                    complaintId:
+                                        complaint['_id']?.toString() ??
+                                        complaint['id']?.toString() ??
+                                        '',
+                                  ),
+                                ),
+                              ).then((_) => _loadComplaints());
+                            },
+                            formatSLA: _formatSLA,
+                          );
+                        },
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1575,134 +1560,257 @@ class _PremiumComplaintCard extends StatelessWidget {
   }
 }
 
-class _ModernStatCard extends StatefulWidget {
-  final String title;
-  final int value;
-  final IconData icon;
-  final Color color;
-  final List<Color> gradient;
+// Status Segment Widget - Modern Tab Design
+class _StatusSegment extends StatelessWidget {
+  final String label;
+  final int count;
+  final bool isSelected;
+  final Color? color;
+  final VoidCallback onTap;
 
-  const _ModernStatCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-    required this.gradient,
+  const _StatusSegment({
+    required this.label,
+    required this.count,
+    required this.isSelected,
+    this.color,
+    required this.onTap,
   });
 
   @override
-  State<_ModernStatCard> createState() => _ModernStatCardState();
+  Widget build(BuildContext context) {
+    final segmentColor = color ?? AppColors.primary;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? segmentColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? segmentColor
+                  : AppColors.border.withOpacity(0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withOpacity(0.25)
+                      : segmentColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.white : segmentColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _ModernStatCardState extends State<_ModernStatCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _fadeAnimation;
+// Building Selector Sheet - Modern Design
+class _BuildingSelectorSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> buildings;
+  final String? selectedBuildingCode;
 
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.elasticOut),
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
-    );
-    _animationController.forward();
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
+  const _BuildingSelectorSheet({
+    required this.buildings,
+    this.selectedBuildingCode,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _animationController,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: Opacity(
-            opacity: _fadeAnimation.value,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: widget.gradient,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle
+          Container(
+            margin: const EdgeInsets.only(top: 8, bottom: 4),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.border.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.location_city_rounded,
+                  color: AppColors.primary,
+                  size: 24,
                 ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: widget.color.withOpacity(0.2),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.color.withOpacity(0.15),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: widget.color.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(10),
+                      Text(
+                        'Select Building',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
                         ),
-                        child: Icon(widget.icon, color: widget.color, size: 20),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: widget.color,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          widget.value.toString(),
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Choose building to view',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    widget.title,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                    ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: AppColors.textSecondary,
                   ),
-                ],
-              ),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
             ),
           ),
-        );
-      },
+          // Buildings List
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: buildings.length,
+              itemBuilder: (context, index) {
+                final building = buildings[index];
+                final code = building['code']?.toString() ?? '';
+                final name = building['name']?.toString() ?? code;
+                final isSelected = code == selectedBuildingCode;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => Navigator.pop(context, code),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.background,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.border.withOpacity(0.2),
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? Colors.white.withOpacity(0.2)
+                                    : AppColors.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.apartment_rounded,
+                                color: isSelected
+                                    ? Colors.white
+                                    : AppColors.primary,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  if (code.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      code,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isSelected
+                                            ? Colors.white.withOpacity(0.8)
+                                            : AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              Icon(
+                                Icons.check_circle_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
     );
   }
 }
+
+// Filter Mega Menu moved to separate file: complaint_filter_mega_menu.dart

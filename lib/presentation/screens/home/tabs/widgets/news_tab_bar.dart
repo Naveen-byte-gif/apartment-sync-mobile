@@ -43,16 +43,6 @@ class NewsTabBar extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.favorite, size: 18),
-                  SizedBox(width: 6),
-                  Text('Health'),
-                ],
-              ),
-            ),
-            Tab(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
                   Icon(Icons.sports_soccer, size: 18),
                   SizedBox(width: 6),
                   Text('Sports'),

@@ -5,7 +5,7 @@ import 'flat_details_screen.dart';
 
 class BuildingView3DScreen extends StatefulWidget {
   final String? buildingCode;
-  
+
   const BuildingView3DScreen({super.key, this.buildingCode});
 
   @override
@@ -20,13 +20,24 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
   String? _selectedBlock;
   int? _selectedFloor;
   String? _searchQuery;
-  String? _filterStatus; // 'all', 'occupied', 'vacant', 'has_complaints', 'pending_dues'
-  
+  String?
+  _filterStatus; // 'all', 'occupied', 'vacant', 'has_complaints', 'pending_dues'
+
   // Animation controllers
   late AnimationController _zoomController;
   late AnimationController _expandController;
+  late AnimationController _pulseController;
   late Animation<double> _zoomAnimation;
   late Animation<double> _expandAnimation;
+  late Animation<double> _pulseAnimation;
+
+  // Gesture control
+  double _scale = 1.0;
+  double _panX = 0.0;
+  double _panY = 0.0;
+  double _rotation = 0.0;
+  Offset _lastPanPosition = Offset.zero;
+  double _previousScale = 1.0;
 
   @override
   void initState() {
@@ -39,11 +50,19 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-    _zoomAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+
+    _zoomAnimation = Tween<double>(begin: 1.0, end: 1.5).animate(
       CurvedAnimation(parent: _zoomController, curve: Curves.easeInOut),
     );
     _expandAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _expandController, curve: Curves.easeInOut),
+    );
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _loadBuildingView();
   }
@@ -52,6 +71,7 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
   void dispose() {
     _zoomController.dispose();
     _expandController.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -63,13 +83,16 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
         endpoint += '?buildingCode=${widget.buildingCode}';
       }
       final response = await ApiService.get(endpoint);
-      
+
       if (response['success'] == true) {
         setState(() {
           _buildingData = response['data'];
         });
       } else {
-        AppMessageHandler.showError(context, response['message'] ?? 'Failed to load building');
+        AppMessageHandler.showError(
+          context,
+          response['message'] ?? 'Failed to load building',
+        );
       }
     } catch (e) {
       AppMessageHandler.handleError(context, e);
@@ -97,9 +120,9 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
 
   List<Map<String, dynamic>> _getFilteredFloors() {
     if (_buildingData == null || _buildingData!['building'] == null) return [];
-    
+
     List<Map<String, dynamic>> floors = List<Map<String, dynamic>>.from(
-      _buildingData!['building']['floors'] ?? []
+      _buildingData!['building']['floors'] ?? [],
     );
 
     // Apply search filter
@@ -107,9 +130,10 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
       floors = floors.map((floor) {
         final filteredFlats = (floor['flats'] as List).where((flat) {
           final flatNum = flat['flatNumber']?.toString().toLowerCase() ?? '';
-          final ownerName = flat['occupiedBy']?['fullName']?.toString().toLowerCase() ?? '';
+          final ownerName =
+              flat['occupiedBy']?['fullName']?.toString().toLowerCase() ?? '';
           return flatNum.contains(_searchQuery!.toLowerCase()) ||
-                 ownerName.contains(_searchQuery!.toLowerCase());
+              ownerName.contains(_searchQuery!.toLowerCase());
         }).toList();
         return {...floor, 'flats': filteredFlats};
       }).toList();
@@ -169,6 +193,11 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
               onPressed: () {
                 setState(() {
                   _is3DView = !_is3DView;
+                  // Reset gestures when switching views
+                  _scale = 1.0;
+                  _panX = 0.0;
+                  _panY = 0.0;
+                  _rotation = 0.0;
                 });
               },
               tooltip: _is3DView ? 'Switch to List View' : 'Switch to 3D View',
@@ -193,21 +222,19 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _buildingData == null
-              ? _buildEmptyState()
-              : Column(
-                  children: [
-                    // Search and Filter Bar
-                    _buildSearchAndFilterBar(),
-                    // Statistics Cards
-                    _buildStatisticsCards(),
-                    // Main Content
-                    Expanded(
-                      child: _is3DView
-                          ? _build3DView()
-                          : _buildListView(),
-                    ),
-                  ],
+          ? _buildEmptyState()
+          : Column(
+              children: [
+                // Search and Filter Bar
+                _buildSearchAndFilterBar(),
+                // Statistics Cards
+                _buildStatisticsCards(),
+                // Main Content
+                Expanded(
+                  child: _is3DView ? _buildEnhanced3DView() : _buildListView(),
                 ),
+              ],
+            ),
     );
   }
 
@@ -289,10 +316,10 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
 
   Widget _buildStatisticsCards() {
     if (_buildingData?['statistics'] == null) return const SizedBox.shrink();
-    
+
     final stats = _buildingData!['statistics'];
     final occupancyRate = stats['occupancyRate'] ?? 0.0;
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       padding: const EdgeInsets.all(16),
@@ -306,10 +333,7 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
           ],
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.2),
-          width: 1,
-        ),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2), width: 1),
       ),
       child: Column(
         children: [
@@ -375,10 +399,7 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
                             height: 8,
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: [
-                                  AppColors.success,
-                                  AppColors.primary,
-                                ],
+                                colors: [AppColors.success, AppColors.primary],
                               ),
                               borderRadius: BorderRadius.circular(4),
                             ),
@@ -405,184 +426,428 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
     );
   }
 
-  Widget _build3DView() {
+  Widget _buildEnhanced3DView() {
     final floors = _getFilteredFloors();
     if (floors.isEmpty) {
       return _buildEmptyState();
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Building Header with Info
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  AppColors.primary.withOpacity(0.1),
-                  AppColors.primary.withOpacity(0.05),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: AppColors.primary.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(16),
+    return Stack(
+      children: [
+        // Main Content with Scroll
+        SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Building Header with Info
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.primary.withOpacity(0.1),
+                      AppColors.primary.withOpacity(0.05),
+                    ],
                   ),
-                  child: const Icon(
-                    Icons.apartment,
-                    color: Colors.white,
-                    size: 32,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppColors.primary.withOpacity(0.2),
+                    width: 1,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _buildingData?['building']?['name'] ?? 'Building',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${_buildingData?['building']?['address']?['city'] ?? ''}, ${_buildingData?['building']?['address']?['state'] ?? ''}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
+                      child: const Icon(
+                        Icons.apartment,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _buildingData?['building']?['name'] ?? 'Building',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_buildingData?['building']?['address']?['city'] ?? ''}, ${_buildingData?['building']?['address']?['state'] ?? ''}',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Enhanced 3D Building Visualization with Gesture Support
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onScaleStart: (details) {
+                  _lastPanPosition = details.localFocalPoint;
+                  _previousScale = _scale;
+                },
+                onScaleUpdate: (details) {
+                  setState(() {
+                    // Handle zoom (when two fingers are used)
+                    if (details.pointerCount == 2) {
+                      final scaleDelta = details.scale / _previousScale;
+                      _scale = (_scale * scaleDelta).clamp(0.5, 2.0);
+                      _previousScale = details.scale;
+                    }
+                    // Handle pan (when one finger is used)
+                    if (details.pointerCount == 1) {
+                      final delta = details.localFocalPoint - _lastPanPosition;
+                      _panX += delta.dx;
+                      _panY += delta.dy;
+                      // Limit panning
+                      _panX = _panX.clamp(-100.0, 100.0);
+                      _panY = _panY.clamp(-100.0, 100.0);
+                    }
+                    _lastPanPosition = details.localFocalPoint;
+                  });
+                },
+                onScaleEnd: (details) {
+                  // Snap to reasonable scale values
+                  setState(() {
+                    if (_scale < 0.7) {
+                      _scale = 0.7;
+                    } else if (_scale > 1.5) {
+                      _scale = 1.5;
+                    }
+                    // Smooth return to center for pan
+                    _panX = _panX * 0.5;
+                    _panY = _panY * 0.5;
+                    _previousScale = _scale;
+                  });
+                },
+                child: Container(
+                  height: 500,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [AppColors.background, AppColors.surface],
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.15),
+                        blurRadius: 30,
+                        offset: const Offset(0, 15),
+                        spreadRadius: 5,
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Building Visualization
-          Container(
-            height: 450,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  AppColors.background,
-                  AppColors.surface,
-                ],
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.15),
-                  blurRadius: 30,
-                  offset: const Offset(0, 15),
-                  spreadRadius: 5,
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Stack(
-                children: [
-                  // Background pattern
-                  CustomPaint(
-                    painter: IsometricBuildingPainter(
-                      floors: floors,
-                      selectedFloor: _selectedFloor,
-                      onFloorTap: (floorNum) {
-                        setState(() {
-                          if (_selectedFloor == floorNum) {
-                            _selectedFloor = null;
-                            _expandController.reverse();
-                          } else {
-                            _selectedFloor = floorNum;
-                            _expandController.forward();
-                          }
-                        });
-                      },
-                      getFlatStatusColor: _getFlatStatusColor,
-                    ),
-                    size: Size.infinite,
-                  ),
-                  // Legend
-                  Positioned(
-                    top: 16,
-                    right: 16,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.95),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Status',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Stack(
+                      children: [
+                        // Background pattern
+                        Transform.scale(
+                          scale: _scale,
+                          child: Transform.translate(
+                            offset: Offset(_panX, _panY),
+                            child: CustomPaint(
+                              painter: EnhancedIsometricBuildingPainter(
+                                floors: floors,
+                                selectedFloor: _selectedFloor,
+                                onFloorTap: (floorNum) {
+                                  setState(() {
+                                    if (_selectedFloor == floorNum) {
+                                      _selectedFloor = null;
+                                      _expandController.reverse();
+                                    } else {
+                                      _selectedFloor = floorNum;
+                                      _expandController.forward();
+                                    }
+                                  });
+                                },
+                                getFlatStatusColor: _getFlatStatusColor,
+                              ),
+                              size: Size.infinite,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          _LegendItem(
-                            color: AppColors.success,
-                            label: 'Occupied',
+                        ),
+                        // Interactive Floor Buttons (Right Side)
+                        Positioned(
+                          right: 16,
+                          top: 16,
+                          bottom: 16,
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: floors.reversed.map((floor) {
+                                final floorNum = floor['floorNumber'] as int;
+                                final isSelected = _selectedFloor == floorNum;
+                                final flats = List<Map<String, dynamic>>.from(
+                                  floor['flats'] ?? [],
+                                );
+                                final occupiedCount = flats
+                                    .where((f) => f['status'] == 'occupied')
+                                    .length;
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: () {
+                                        setState(() {
+                                          if (_selectedFloor == floorNum) {
+                                            _selectedFloor = null;
+                                            _expandController.reverse();
+                                          } else {
+                                            _selectedFloor = floorNum;
+                                            _expandController.forward();
+                                          }
+                                        });
+                                      },
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 200,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          gradient: isSelected
+                                              ? LinearGradient(
+                                                  colors: [
+                                                    AppColors.primary,
+                                                    AppColors.primary
+                                                        .withOpacity(0.8),
+                                                  ],
+                                                )
+                                              : null,
+                                          color: isSelected
+                                              ? null
+                                              : Colors.white.withOpacity(0.9),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? Colors.white
+                                                : AppColors.primary.withOpacity(
+                                                    0.3,
+                                                  ),
+                                            width: isSelected ? 2 : 1,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: isSelected
+                                                  ? AppColors.primary
+                                                        .withOpacity(0.4)
+                                                  : Colors.black.withOpacity(
+                                                      0.1,
+                                                    ),
+                                              blurRadius: isSelected ? 12 : 4,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'F$floorNum',
+                                              style: TextStyle(
+                                                color: isSelected
+                                                    ? Colors.white
+                                                    : AppColors.primary,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              '$occupiedCount/${flats.length}',
+                                              style: TextStyle(
+                                                color: isSelected
+                                                    ? Colors.white70
+                                                    : AppColors.textSecondary,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          _LegendItem(
-                            color: Colors.grey.shade400,
-                            label: 'Vacant',
+                        ),
+                        // Legend (Top Left)
+                        Positioned(
+                          top: 16,
+                          left: 16,
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.95),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      size: 16,
+                                      color: AppColors.primary,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Status',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                _LegendItem(
+                                  color: AppColors.success,
+                                  label: 'Occupied',
+                                ),
+                                const SizedBox(height: 4),
+                                _LegendItem(
+                                  color: Colors.grey.shade400,
+                                  label: 'Vacant',
+                                ),
+                                const SizedBox(height: 4),
+                                _LegendItem(
+                                  color: AppColors.warning,
+                                  label: 'Complaints',
+                                ),
+                                const SizedBox(height: 4),
+                                _LegendItem(
+                                  color: AppColors.error,
+                                  label: 'Pending Dues',
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          _LegendItem(
-                            color: AppColors.warning,
-                            label: 'Complaints',
+                        ),
+                        // Gesture Instructions (Bottom)
+                        Positioned(
+                          bottom: 16,
+                          left: 16,
+                          right: 16,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.6),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.touch_app,
+                                  size: 14,
+                                  color: Colors.white70,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Pinch to zoom • Drag to pan',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          _LegendItem(
-                            color: AppColors.error,
-                            label: 'Pending Dues',
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
+              const SizedBox(height: 24),
+              // Floor Details
+              if (_selectedFloor != null) _buildFloorDetails(_selectedFloor!),
+            ],
           ),
-          const SizedBox(height: 24),
-          // Floor Details
-          if (_selectedFloor != null)
-            _buildFloorDetails(_selectedFloor!),
-        ],
-      ),
+        ),
+        // Zoom Controls (Bottom Right)
+        Positioned(
+          bottom: 80,
+          right: 16,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ZoomControlButton(
+                icon: Icons.add,
+                onTap: () {
+                  setState(() {
+                    _scale = (_scale + 0.1).clamp(0.5, 2.0);
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              _ZoomControlButton(
+                icon: Icons.remove,
+                onTap: () {
+                  setState(() {
+                    _scale = (_scale - 0.1).clamp(0.5, 2.0);
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              _ZoomControlButton(
+                icon: Icons.refresh,
+                onTap: () {
+                  setState(() {
+                    _scale = 1.0;
+                    _panX = 0.0;
+                    _panY = 0.0;
+                    _rotation = 0.0;
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -617,11 +882,26 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Floor $floorNumber',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.layers,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Floor $floorNumber',
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ],
                         ),
                         IconButton(
                           icon: const Icon(Icons.close),
@@ -638,12 +918,13 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 1.3,
-                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 1.3,
+                          ),
                       itemCount: flats.length,
                       itemBuilder: (context, index) {
                         return _buildFlatCard(flats[index], floorNumber);
@@ -664,14 +945,15 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
     final statusColor = _getFlatStatusColor(status);
     final hasComplaints = flat['complaintsCount'] > 0;
     final hasPendingDues = flat['hasPendingDues'] == true;
-    
+
     return InkWell(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => FlatDetailsScreen(
-              buildingCode: widget.buildingCode ?? _buildingData?['building']?['code'],
+              buildingCode:
+                  widget.buildingCode ?? _buildingData?['building']?['code'],
               floorNumber: floorNumber,
               flatNumber: flat['flatNumber'],
             ),
@@ -690,10 +972,7 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
             ],
           ),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: statusColor.withOpacity(0.4),
-            width: 2,
-          ),
+          border: Border.all(color: statusColor.withOpacity(0.4), width: 2),
           boxShadow: [
             BoxShadow(
               color: statusColor.withOpacity(0.1),
@@ -710,7 +989,10 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: statusColor.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(10),
@@ -789,11 +1071,7 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.person,
-                    size: 12,
-                    color: AppColors.textSecondary,
-                  ),
+                  Icon(Icons.person, size: 12, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
@@ -832,13 +1110,16 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
           final floor = floors[index];
           return _FloorSection(
             floor: floor,
-            buildingCode: widget.buildingCode ?? _buildingData?['building']?['code'],
+            buildingCode:
+                widget.buildingCode ?? _buildingData?['building']?['code'],
             onFlatTap: (flat) {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => FlatDetailsScreen(
-                    buildingCode: widget.buildingCode ?? _buildingData?['building']?['code'],
+                    buildingCode:
+                        widget.buildingCode ??
+                        _buildingData?['building']?['code'],
                     floorNumber: floor['floorNumber'],
                     flatNumber: flat['flatNumber'],
                   ),
@@ -867,16 +1148,16 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
             const SizedBox(height: 16),
             Text(
               'No Building Data',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
               'Unable to load building information',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.textSecondary,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
@@ -891,14 +1172,14 @@ class _BuildingView3DScreenState extends State<BuildingView3DScreen>
   }
 }
 
-// Isometric Building Painter
-class IsometricBuildingPainter extends CustomPainter {
+// Enhanced Isometric Building Painter with better 3D effect
+class EnhancedIsometricBuildingPainter extends CustomPainter {
   final List<Map<String, dynamic>> floors;
   final int? selectedFloor;
   final Function(int) onFloorTap;
   final Color Function(String) getFlatStatusColor;
 
-  IsometricBuildingPainter({
+  EnhancedIsometricBuildingPainter({
     required this.floors,
     required this.selectedFloor,
     required this.onFloorTap,
@@ -909,20 +1190,23 @@ class IsometricBuildingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (floors.isEmpty) return;
 
-    // Calculate dimensions
+    // Calculate dimensions with better perspective
     final totalFloors = floors.length;
-    final floorHeight = (size.height - 60) / (totalFloors + 1);
-    final floorWidth = size.width * 0.75;
+    final floorHeight = (size.height - 80) / (totalFloors + 1);
+    final floorWidth = size.width * 0.6;
     final startX = (size.width - floorWidth) / 2;
-    final isometricOffset = 25.0;
-    final baseY = size.height - 30;
+    final isometricOffset = 30.0;
+    final baseY = size.height - 40;
 
-    // Draw ground/base
+    // Draw ground/base with shadow
     final groundPath = Path();
-    groundPath.moveTo(startX - 20, baseY + 10);
-    groundPath.lineTo(startX + floorWidth + 20, baseY + 10);
-    groundPath.lineTo(startX + floorWidth + 20 + isometricOffset, baseY + 10 - 15);
-    groundPath.lineTo(startX - 20 + isometricOffset, baseY + 10 - 15);
+    groundPath.moveTo(startX - 30, baseY + 15);
+    groundPath.lineTo(startX + floorWidth + 30, baseY + 15);
+    groundPath.lineTo(
+      startX + floorWidth + 30 + isometricOffset,
+      baseY + 15 - 20,
+    );
+    groundPath.lineTo(startX - 30 + isometricOffset, baseY + 15 - 20);
     groundPath.close();
 
     final groundPaint = Paint()
@@ -930,55 +1214,82 @@ class IsometricBuildingPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     canvas.drawPath(groundPath, groundPaint);
 
+    // Draw shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.1)
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(groundPath, shadowPaint);
+
     // Draw floors from bottom to top (isometric 3D effect)
     for (int i = totalFloors - 1; i >= 0; i--) {
       final floor = floors[i];
       final floorNum = floor['floorNumber'] as int;
       final y = baseY - (totalFloors - i) * floorHeight;
       final isSelected = selectedFloor == floorNum;
-      final offsetX = (totalFloors - 1 - i) * isometricOffset;
+      final offsetX = (totalFloors - 1 - i) * isometricOffset * 0.8;
 
       // Draw floor front face (isometric rectangle)
       final frontPath = Path();
       frontPath.moveTo(startX + offsetX, y);
       frontPath.lineTo(startX + offsetX + floorWidth, y);
-      frontPath.lineTo(startX + offsetX + floorWidth + isometricOffset, y - floorHeight);
+      frontPath.lineTo(
+        startX + offsetX + floorWidth + isometricOffset,
+        y - floorHeight,
+      );
       frontPath.lineTo(startX + offsetX + isometricOffset, y - floorHeight);
       frontPath.close();
 
       // Draw floor top face (for 3D effect)
       final topPath = Path();
       topPath.moveTo(startX + offsetX + isometricOffset, y - floorHeight);
-      topPath.lineTo(startX + offsetX + floorWidth + isometricOffset, y - floorHeight);
-      topPath.lineTo(startX + offsetX + floorWidth + isometricOffset * 2, y - floorHeight - isometricOffset);
-      topPath.lineTo(startX + offsetX + isometricOffset * 2, y - floorHeight - isometricOffset);
+      topPath.lineTo(
+        startX + offsetX + floorWidth + isometricOffset,
+        y - floorHeight,
+      );
+      topPath.lineTo(
+        startX + offsetX + floorWidth + isometricOffset * 2,
+        y - floorHeight - isometricOffset,
+      );
+      topPath.lineTo(
+        startX + offsetX + isometricOffset * 2,
+        y - floorHeight - isometricOffset,
+      );
       topPath.close();
 
       // Draw floor side face
       final sidePath = Path();
       sidePath.moveTo(startX + offsetX + floorWidth, y);
-      sidePath.lineTo(startX + offsetX + floorWidth + isometricOffset, y - floorHeight);
-      sidePath.lineTo(startX + offsetX + floorWidth + isometricOffset * 2, y - floorHeight - isometricOffset);
-      sidePath.lineTo(startX + offsetX + floorWidth + isometricOffset, y - isometricOffset);
+      sidePath.lineTo(
+        startX + offsetX + floorWidth + isometricOffset,
+        y - floorHeight,
+      );
+      sidePath.lineTo(
+        startX + offsetX + floorWidth + isometricOffset * 2,
+        y - floorHeight - isometricOffset,
+      );
+      sidePath.lineTo(
+        startX + offsetX + floorWidth + isometricOffset,
+        y - isometricOffset,
+      );
       sidePath.close();
 
       // Fill colors with gradient effect
       final frontPaint = Paint()
         ..color = isSelected
-            ? AppColors.primary.withOpacity(0.4)
-            : AppColors.primary.withOpacity(0.15)
+            ? AppColors.primary.withOpacity(0.5)
+            : AppColors.primary.withOpacity(0.2)
         ..style = PaintingStyle.fill;
 
       final topPaint = Paint()
         ..color = isSelected
-            ? AppColors.primary.withOpacity(0.25)
-            : AppColors.primary.withOpacity(0.1)
+            ? AppColors.primary.withOpacity(0.35)
+            : AppColors.primary.withOpacity(0.15)
         ..style = PaintingStyle.fill;
 
       final sidePaint = Paint()
         ..color = isSelected
-            ? AppColors.primary.withOpacity(0.3)
-            : AppColors.primary.withOpacity(0.12)
+            ? AppColors.primary.withOpacity(0.4)
+            : AppColors.primary.withOpacity(0.18)
         ..style = PaintingStyle.fill;
 
       // Draw faces
@@ -986,43 +1297,45 @@ class IsometricBuildingPainter extends CustomPainter {
       canvas.drawPath(topPath, topPaint);
       canvas.drawPath(frontPath, frontPaint);
 
-      // Draw floor border
+      // Draw floor border with better visibility
       final borderPaint = Paint()
         ..color = isSelected
             ? AppColors.primary
-            : AppColors.primary.withOpacity(0.4)
+            : AppColors.primary.withOpacity(0.5)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isSelected ? 3.0 : 2.0;
+        ..strokeWidth = isSelected ? 3.5 : 2.5;
 
       canvas.drawPath(frontPath, borderPaint);
       canvas.drawPath(topPath, borderPaint);
       canvas.drawPath(sidePath, borderPaint);
 
-      // Draw floor number badge
+      // Draw floor number badge with better design
       final badgeRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          startX + offsetX + 12,
-          y - floorHeight / 2 - 12,
-          40,
-          24,
-        ),
-        const Radius.circular(12),
+        Rect.fromLTWH(startX + offsetX + 12, y - floorHeight / 2 - 14, 45, 28),
+        const Radius.circular(14),
       );
 
       final badgePaint = Paint()
         ..color = isSelected
             ? AppColors.primary
-            : AppColors.primary.withOpacity(0.8)
+            : AppColors.primary.withOpacity(0.9)
         ..style = PaintingStyle.fill;
 
       canvas.drawRRect(badgeRect, badgePaint);
+
+      // Draw badge border
+      final badgeBorderPaint = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawRRect(badgeRect, badgeBorderPaint);
 
       final textPainter = TextPainter(
         text: TextSpan(
           text: 'F$floorNum',
           style: TextStyle(
             color: Colors.white,
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -1032,12 +1345,12 @@ class IsometricBuildingPainter extends CustomPainter {
       textPainter.paint(
         canvas,
         Offset(
-          startX + offsetX + 32 - textPainter.width / 2,
+          startX + offsetX + 34.5 - textPainter.width / 2,
           y - floorHeight / 2 - textPainter.height / 2,
         ),
       );
 
-      // Draw flats on floor
+      // Draw flats on floor with better visualization
       final flats = List<Map<String, dynamic>>.from(floor['flats'] ?? []);
       if (flats.isNotEmpty) {
         final flatSpacing = floorWidth / (flats.length + 1);
@@ -1048,13 +1361,16 @@ class IsometricBuildingPainter extends CustomPainter {
           final flatColor = getFlatStatusColor(flatStatus);
           final hasComplaints = flat['complaintsCount'] > 0;
 
-          // Draw flat indicator (isometric square)
-          final flatSize = 12.0;
+          // Draw flat indicator (isometric square with better design)
+          final flatSize = 14.0;
           final flatPath = Path();
           flatPath.moveTo(flatX - flatSize / 2, y - floorHeight / 2);
           flatPath.lineTo(flatX - flatSize / 2 + flatSize, y - floorHeight / 2);
-          flatPath.lineTo(flatX - flatSize / 2 + flatSize + 4, y - floorHeight / 2 - 4);
-          flatPath.lineTo(flatX - flatSize / 2 + 4, y - floorHeight / 2 - 4);
+          flatPath.lineTo(
+            flatX - flatSize / 2 + flatSize + 5,
+            y - floorHeight / 2 - 5,
+          );
+          flatPath.lineTo(flatX - flatSize / 2 + 5, y - floorHeight / 2 - 5);
           flatPath.close();
 
           final flatPaint = Paint()
@@ -1065,9 +1381,9 @@ class IsometricBuildingPainter extends CustomPainter {
 
           // Draw border for flat
           final flatBorderPaint = Paint()
-            ..color = flatColor.withOpacity(0.8)
+            ..color = flatColor.withOpacity(0.9)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5;
+            ..strokeWidth = 2.0;
 
           canvas.drawPath(flatPath, flatBorderPaint);
 
@@ -1078,8 +1394,19 @@ class IsometricBuildingPainter extends CustomPainter {
               ..style = PaintingStyle.fill;
             canvas.drawCircle(
               Offset(flatX + flatSize / 2, y - floorHeight / 2 - flatSize / 2),
-              4,
+              5,
               complaintPaint,
+            );
+
+            // Draw white border for complaint indicator
+            final complaintBorderPaint = Paint()
+              ..color = Colors.white
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5;
+            canvas.drawCircle(
+              Offset(flatX + flatSize / 2, y - floorHeight / 2 - flatSize / 2),
+              5,
+              complaintBorderPaint,
             );
           }
         }
@@ -1091,15 +1418,50 @@ class IsometricBuildingPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
+// Zoom Control Button Widget
+class _ZoomControlButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _ZoomControlButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(25),
+          child: Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            child: Icon(icon, color: AppColors.primary, size: 24),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // Legend Item Widget
 class _LegendItem extends StatelessWidget {
   final Color color;
   final String label;
 
-  const _LegendItem({
-    required this.color,
-    required this.label,
-  });
+  const _LegendItem({required this.color, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -1107,24 +1469,18 @@ class _LegendItem extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 12,
-          height: 12,
+          width: 14,
+          height: 14,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(2),
-            border: Border.all(
-              color: color.withOpacity(0.5),
-              width: 1,
-            ),
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: color.withOpacity(0.5), width: 1),
           ),
         ),
         const SizedBox(width: 6),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 11,
-            color: AppColors.textSecondary,
-          ),
+          style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
         ),
       ],
     );
@@ -1157,9 +1513,7 @@ class _FilterChip extends StatelessWidget {
               ? (color ?? AppColors.primary).withOpacity(0.2)
               : AppColors.surface,
           border: Border.all(
-            color: isSelected
-                ? (color ?? AppColors.primary)
-                : AppColors.border,
+            color: isSelected ? (color ?? AppColors.primary) : AppColors.border,
             width: isSelected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(20),
@@ -1200,10 +1554,7 @@ class _StatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color.withOpacity(0.3),
-          width: 1,
-        ),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
       ),
       child: Column(
         children: [
@@ -1220,10 +1571,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -1248,13 +1596,11 @@ class _FloorSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final flats = List<Map<String, dynamic>>.from(floor['flats'] ?? []);
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ExpansionTile(
         leading: CircleAvatar(
           backgroundColor: AppColors.primary,
@@ -1288,7 +1634,7 @@ class _FloorSection extends StatelessWidget {
                 final flat = flats[index];
                 final status = flat['status'] ?? 'vacant';
                 final statusColor = getFlatStatusColor(status);
-                
+
                 return InkWell(
                   onTap: () => onFlatTap(flat),
                   borderRadius: BorderRadius.circular(12),
@@ -1309,7 +1655,10 @@ class _FloorSection extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: statusColor.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(8),
@@ -1370,4 +1719,3 @@ class _FloorSection extends StatelessWidget {
     );
   }
 }
-

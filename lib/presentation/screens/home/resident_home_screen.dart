@@ -4,6 +4,7 @@ import '../../screens/complaints/resident_complaints_screen.dart';
 import '../../screens/complaints/complaint_detail_screen.dart';
 import '../../screens/notices/notices_screen.dart';
 import '../../screens/auth/role_selection_screen.dart';
+import '../../screens/profile/profile_screen.dart';
 import 'dart:convert';
 
 class ResidentHomeScreen extends StatefulWidget {
@@ -322,41 +323,74 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
       padding: const EdgeInsets.all(16.0),
       child: Row(
         children: [
-          // 3D Avatar with shadow effect
-          Transform(
-            transform: Matrix4.identity()
-              ..setEntry(3, 2, 0.001)
-              ..rotateX(0.05)
-              ..rotateY(-0.05),
-            alignment: FractionalOffset.center,
-            child: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Colors.white, Colors.white.withOpacity(0.9)],
+          // 3D Avatar with shadow effect - Clickable to navigate to profile
+          GestureDetector(
+            onTap: () {
+              print('🖱️ [FLUTTER] Profile avatar tapped');
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ProfileScreen(showAppBar: true),
                 ),
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
-                    spreadRadius: 2,
+              );
+            },
+            child: Transform(
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.001)
+                ..rotateX(0.05)
+                ..rotateY(-0.05),
+              alignment: FractionalOffset.center,
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Colors.white, Colors.white.withOpacity(0.9)],
                   ),
-                ],
-              ),
-              child: Center(
-                child: Text(
-                  _user?.fullName[0].toUpperCase() ?? 'R',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 15,
+                      offset: const Offset(0, 5),
+                      spreadRadius: 2,
+                    ),
+                  ],
                 ),
+                child: _user?.profilePicture != null && _user!.profilePicture!.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: Image.network(
+                          _user!.profilePicture!,
+                          fit: BoxFit.cover,
+                          width: 60,
+                          height: 60,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Center(
+                              child: Text(
+                                _user?.fullName[0].toUpperCase() ?? 'R',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    : Center(
+                        child: Text(
+                          _user?.fullName[0].toUpperCase() ?? 'R',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
               ),
             ),
           ),

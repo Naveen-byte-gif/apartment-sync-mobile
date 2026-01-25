@@ -4,27 +4,34 @@ import '../screens/auth/role_selection_screen.dart';
 import '../screens/admin/bulk_resident_management_screen.dart';
 import '../screens/admin/complaints_management_screen.dart';
 import '../screens/admin/settings_screen.dart';
-import '../screens/staff/visitor_checkin_screen.dart';
 import '../screens/complaints/complaints_screen.dart';
 import '../screens/notices/notices_screen.dart';
 import '../screens/visitors/visitor_dashboard_screen.dart';
 import '../screens/visitors/visitors_log_screen.dart';
+import '../screens/admin/visitor_management_screen.dart';
+import '../screens/staff/users_management_screen.dart';
+import '../screens/staff/create_user_screen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:convert';
 
 /// Drawer item model
 class DrawerItem {
   final IconData icon;
   final String title;
+  final String? subtitle;
   final VoidCallback? onTap;
   final bool isDivider;
   final bool isLogout;
+  final bool isSelected;
 
   const DrawerItem({
     required this.icon,
     required this.title,
+    this.subtitle,
     this.onTap,
     this.isDivider = false,
     this.isLogout = false,
+    this.isSelected = false,
   });
 }
 
@@ -33,10 +40,7 @@ class DrawerSection {
   final String? title;
   final List<DrawerItem> items;
 
-  const DrawerSection({
-    this.title,
-    required this.items,
-  });
+  const DrawerSection({this.title, required this.items});
 }
 
 /// Reusable App Sidebar Widget
@@ -46,6 +50,7 @@ class AppSidebar extends StatelessWidget {
   final String? userEmail;
   final String? subtitle;
   final IconData? headerIcon;
+  final String? profilePictureUrl;
   final List<DrawerSection> sections;
   final VoidCallback? onLogout;
   final Color? headerBackgroundColor;
@@ -57,6 +62,7 @@ class AppSidebar extends StatelessWidget {
     this.userEmail,
     this.subtitle,
     this.headerIcon,
+    this.profilePictureUrl,
     required this.sections,
     this.onLogout,
     this.headerBackgroundColor,
@@ -70,7 +76,7 @@ class AppSidebar extends StatelessWidget {
     final displaySubtitle = subtitle;
     final icon = headerIcon ?? Icons.person;
 
-    return DrawerHeader(
+    return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -80,72 +86,146 @@ class AppSidebar extends StatelessWidget {
                   headerBackgroundColor!,
                   headerBackgroundColor!.withOpacity(0.8),
                 ]
-              : [
-                  AppColors.primary,
-                  AppColors.primaryDark,
-                ],
+              : [AppColors.primary, AppColors.primaryDark],
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Center(
-              child: headerIcon != null
-                  ? Icon(
-                      icon,
-                      color: AppColors.primary,
-                      size: 30,
-                    )
-                  : Text(
-                      displayName.isNotEmpty
-                          ? displayName.substring(0, 1).toUpperCase()
-                          : 'U',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Avatar with profile picture or icon
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            displayName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (displayEmail != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              displayEmail,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child:
+                      profilePictureUrl != null && profilePictureUrl!.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: profilePictureUrl!,
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => Center(
+                            child: headerIcon != null
+                                ? Icon(icon, color: AppColors.primary, size: 28)
+                                : Text(
+                                    displayName.isNotEmpty
+                                        ? displayName
+                                              .substring(0, 1)
+                                              .toUpperCase()
+                                        : 'U',
+                                    style: TextStyle(
+                                      color: AppColors.primary,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                          errorWidget: (context, url, error) => Center(
+                            child: headerIcon != null
+                                ? Icon(icon, color: AppColors.primary, size: 28)
+                                : Text(
+                                    displayName.isNotEmpty
+                                        ? displayName
+                                              .substring(0, 1)
+                                              .toUpperCase()
+                                        : 'U',
+                                    style: TextStyle(
+                                      color: AppColors.primary,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        )
+                      : Center(
+                          child: headerIcon != null
+                              ? Icon(icon, color: AppColors.primary, size: 28)
+                              : Text(
+                                  displayName.isNotEmpty
+                                      ? displayName
+                                            .substring(0, 1)
+                                            .toUpperCase()
+                                      : 'U',
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                        ),
+                ),
               ),
-            ),
-          ],
-          if (displaySubtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              displaySubtitle,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 12,
+              const SizedBox(height: 10),
+              // Name with overflow protection
+              Flexible(
+                child: Text(
+                  displayName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-          ],
-        ],
+              // Email with overflow protection
+              if (displayEmail != null) ...[
+                const SizedBox(height: 3),
+                Flexible(
+                  child: Text(
+                    displayEmail,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+              // Subtitle with overflow protection
+              if (displaySubtitle != null) ...[
+                const SizedBox(height: 3),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      displaySubtitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -179,15 +259,35 @@ class AppSidebar extends StatelessWidget {
                 item.title,
                 style: const TextStyle(color: AppColors.error),
               ),
-              onTap: item.onTap ??
+              onTap:
+                  item.onTap ??
                   () {
                     _handleLogout();
                   },
             );
           }
           return ListTile(
-            leading: Icon(item.icon, color: AppColors.primary),
-            title: Text(item.title),
+            leading: Icon(
+              item.icon,
+              color: item.isSelected ? AppColors.primary : AppColors.textSecondary,
+            ),
+            title: Text(
+              item.title,
+              style: TextStyle(
+                fontWeight: item.isSelected ? FontWeight.bold : FontWeight.normal,
+                color: item.isSelected ? AppColors.primary : AppColors.textPrimary,
+              ),
+            ),
+            subtitle: item.subtitle != null
+                ? Text(
+                    item.subtitle!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  )
+                : null,
+            selected: item.isSelected,
             onTap: item.onTap,
           );
         }),
@@ -200,7 +300,7 @@ class AppSidebar extends StatelessWidget {
     await StorageService.remove(AppConstants.tokenKey);
     await StorageService.remove(AppConstants.userKey);
     ApiService.setToken(null);
-    
+
     // Use the provided onLogout callback or default behavior
     if (onLogout != null) {
       onLogout!();
@@ -219,10 +319,12 @@ class AppSidebar extends StatelessWidget {
               buildingSelector!,
               const Divider(height: 1),
             ],
-            ...sections.expand((section) => [
-                  _buildSection(section),
-                  if (section != sections.last) const Divider(height: 1),
-                ]),
+            ...sections.expand(
+              (section) => [
+                _buildSection(section),
+                if (section != sections.last) const Divider(height: 1),
+              ],
+            ),
           ],
         ),
       ),
@@ -243,12 +345,21 @@ class AppSidebarBuilder {
     final userJson = StorageService.getString(AppConstants.userKey);
     String? userName;
     String? userEmail;
+    String? profilePictureUrl;
 
     if (userJson != null) {
       try {
         final userData = jsonDecode(userJson);
         userName = userData['fullName'] ?? userData['name'] ?? 'Admin';
         userEmail = userData['email'];
+        // Handle profile picture - can be string or object with url
+        if (userData['profilePicture'] != null) {
+          if (userData['profilePicture'] is String) {
+            profilePictureUrl = userData['profilePicture'];
+          } else if (userData['profilePicture'] is Map) {
+            profilePictureUrl = userData['profilePicture']['url'];
+          }
+        }
       } catch (e) {
         print('Error parsing user data: $e');
       }
@@ -258,11 +369,12 @@ class AppSidebarBuilder {
     Widget? buildingSelectorWidget;
     if (buildings != null && buildings.isNotEmpty) {
       // Ensure selectedBuildingCode is valid
-      final validSelectedCode = selectedBuildingCode != null &&
-          buildings.any((b) => b['code'] == selectedBuildingCode)
+      final validSelectedCode =
+          selectedBuildingCode != null &&
+              buildings.any((b) => b['code'] == selectedBuildingCode)
           ? selectedBuildingCode
           : buildings.first['code'] as String?;
-      
+
       buildingSelectorWidget = Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         color: AppColors.surface,
@@ -293,17 +405,20 @@ class AppSidebarBuilder {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.border,
-                  width: 1,
-                ),
+                border: Border.all(color: AppColors.border, width: 1),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: validSelectedCode,
                   isExpanded: true,
-                  icon: const Icon(Icons.arrow_drop_down, color: AppColors.primary),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  icon: const Icon(
+                    Icons.arrow_drop_down,
+                    color: AppColors.primary,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
                   items: buildings.map((building) {
                     final code = building['code'] as String? ?? '';
                     final name = building['name'] as String? ?? 'Unknown';
@@ -313,9 +428,13 @@ class AppSidebarBuilder {
                       child: Row(
                         children: [
                           Icon(
-                            isSelected ? Icons.check_circle : Icons.circle_outlined,
+                            isSelected
+                                ? Icons.check_circle
+                                : Icons.circle_outlined,
                             size: 18,
-                            color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                            color: isSelected
+                                ? AppColors.primary
+                                : AppColors.textSecondary,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -327,7 +446,9 @@ class AppSidebarBuilder {
                                   name,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    fontWeight: isSelected
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                     color: AppColors.textPrimary,
                                   ),
                                   overflow: TextOverflow.ellipsis,
@@ -365,6 +486,7 @@ class AppSidebarBuilder {
       userEmail: userEmail,
       subtitle: buildingName,
       headerIcon: Icons.admin_panel_settings,
+      profilePictureUrl: profilePictureUrl,
       buildingSelector: buildingSelectorWidget,
       sections: [
         DrawerSection(
@@ -423,7 +545,10 @@ class AppSidebarBuilder {
               onTap: () {
                 Navigator.pop(context);
                 // TODO: Navigate to buildings management
-                AppMessageHandler.showInfo(context, 'Buildings management coming soon');
+                AppMessageHandler.showInfo(
+                  context,
+                  'Buildings management coming soon',
+                );
               },
             ),
           ],
@@ -438,9 +563,7 @@ class AppSidebarBuilder {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const SettingsScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
                 );
               },
             ),
@@ -462,7 +585,10 @@ class AppSidebarBuilder {
               title: 'Help & Support',
               onTap: () {
                 Navigator.pop(context);
-                AppMessageHandler.showInfo(context, 'Help & Support coming soon');
+                AppMessageHandler.showInfo(
+                  context,
+                  'Help & Support coming soon',
+                );
               },
             ),
           ],
@@ -496,9 +622,7 @@ class AppSidebarBuilder {
         if (context.mounted) {
           Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(
-              builder: (_) => const RoleSelectionScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const RoleSelectionScreen()),
             (route) => false,
           );
         }
@@ -506,9 +630,14 @@ class AppSidebarBuilder {
     );
   }
 
-  /// Build staff sidebar
+  /// Build staff sidebar with building selection and permissions
   static Widget buildStaffSidebar({
     required BuildContext context,
+    String? buildingName,
+    List<Map<String, dynamic>> buildings = const [],
+    String? selectedBuildingCode,
+    Function(String?)? onBuildingSelected,
+    Map<String, dynamic>? permissions,
   }) {
     final userJson = StorageService.getString(AppConstants.userKey);
     String? userName;
@@ -524,36 +653,133 @@ class AppSidebarBuilder {
       }
     }
 
+    final canManageVisitors = permissions?['canManageVisitors'] == true;
+    final canManageComplaints = permissions?['canManageComplaints'] == true;
+    final canManageAccess = permissions?['canManageAccess'] == true;
+    final canManageMaintenance = permissions?['canManageMaintenance'] == true;
+
     return AppSidebar(
       userName: userName ?? 'Staff',
       userEmail: userEmail,
       headerIcon: Icons.badge,
       sections: [
+        // Building Selection Section
+        if (buildings.isNotEmpty)
+          DrawerSection(
+            title: 'Buildings',
+            items: buildings.map((building) {
+              final code = building['code'] ?? '';
+              final name = building['name'] ?? code;
+              final isSelected = code == selectedBuildingCode;
+              return DrawerItem(
+                icon: isSelected ? Icons.check_circle : Icons.business,
+                title: name,
+                subtitle: 'Code: $code',
+                isSelected: isSelected,
+                onTap: () {
+                  Navigator.pop(context);
+                  if (onBuildingSelected != null) {
+                    onBuildingSelected(code);
+                  }
+                },
+              );
+            }).toList(),
+          ),
+        // Management Section (Permission-based)
+        if (canManageAccess || canManageComplaints || canManageVisitors)
+          DrawerSection(
+            title: 'Management',
+            items: [
+              if (canManageAccess)
+                DrawerItem(
+                  icon: Icons.people,
+                  title: 'Users Management',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const StaffUsersManagementScreen(),
+                      ),
+                    );
+                  },
+                ),
+              if (canManageComplaints)
+                DrawerItem(
+                  icon: Icons.description,
+                  title: 'Complaints',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ComplaintsManagementScreen(),
+                      ),
+                    );
+                  },
+                ),
+              if (canManageVisitors)
+                DrawerItem(
+                  icon: Icons.people_outline,
+                  title: 'Visitor Logs',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const VisitorDashboardScreen(),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        // Tasks Section
         DrawerSection(
           title: 'Tasks',
           items: [
-            DrawerItem(
-              icon: Icons.assignment,
-              title: 'Assigned Complaints',
-              onTap: () {
-                Navigator.pop(context);
-                // TODO: Navigate to assigned complaints
-                AppMessageHandler.showInfo(context, 'Assigned complaints coming soon');
-              },
-            ),
-            DrawerItem(
-              icon: Icons.qr_code_scanner,
-              title: 'Visitor Check-In',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const VisitorCheckInScreen(),
-                  ),
-                );
-              },
-            ),
+            if (canManageAccess)
+              DrawerItem(
+                icon: Icons.person_add,
+                title: 'Create Resident',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const StaffCreateUserScreen(),
+                    ),
+                  );
+                },
+              ),
+            if (canManageComplaints)
+              DrawerItem(
+                icon: Icons.assignment,
+                title: 'My Assignments',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ComplaintsManagementScreen(),
+                    ),
+                  );
+                },
+              ),
+            if (canManageVisitors)
+              DrawerItem(
+                icon: Icons.qr_code_scanner,
+                title: 'Visitor Check-In',
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const VisitorDashboardScreen(),
+                    ),
+                  );
+                },
+              ),
           ],
         ),
         DrawerSection(
@@ -564,7 +790,6 @@ class AppSidebarBuilder {
               title: 'Settings',
               onTap: () {
                 Navigator.pop(context);
-                // TODO: Navigate to settings
                 AppMessageHandler.showInfo(context, 'Settings coming soon');
               },
             ),
@@ -578,7 +803,10 @@ class AppSidebarBuilder {
               title: 'Help & Support',
               onTap: () {
                 Navigator.pop(context);
-                AppMessageHandler.showInfo(context, 'Help & Support coming soon');
+                AppMessageHandler.showInfo(
+                  context,
+                  'Help & Support coming soon',
+                );
               },
             ),
           ],
@@ -612,18 +840,25 @@ class AppSidebarBuilder {
   }
 
   /// Build resident sidebar
-  static Widget buildResidentSidebar({
-    required BuildContext context,
-  }) {
+  static Widget buildResidentSidebar({required BuildContext context}) {
     final userJson = StorageService.getString(AppConstants.userKey);
     String? userName;
     String? userEmail;
+    String? profilePictureUrl;
 
     if (userJson != null) {
       try {
         final userData = jsonDecode(userJson);
         userName = userData['fullName'] ?? userData['name'] ?? 'Resident';
         userEmail = userData['email'];
+        // Handle profile picture
+        if (userData['profilePicture'] != null) {
+          if (userData['profilePicture'] is String) {
+            profilePictureUrl = userData['profilePicture'];
+          } else if (userData['profilePicture'] is Map) {
+            profilePictureUrl = userData['profilePicture']['url'];
+          }
+        }
       } catch (e) {
         print('Error parsing user data: $e');
       }
@@ -633,6 +868,7 @@ class AppSidebarBuilder {
       userName: userName ?? 'Resident',
       userEmail: userEmail,
       headerIcon: Icons.home,
+      profilePictureUrl: profilePictureUrl,
       sections: [
         DrawerSection(
           items: [
@@ -643,9 +879,7 @@ class AppSidebarBuilder {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const ComplaintsScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const ComplaintsScreen()),
                 );
               },
             ),
@@ -656,9 +890,7 @@ class AppSidebarBuilder {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const VisitorsLogScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const VisitorsLogScreen()),
                 );
               },
             ),
@@ -669,9 +901,7 @@ class AppSidebarBuilder {
                 Navigator.pop(context);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const NoticesScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const NoticesScreen()),
                 );
               },
             ),
@@ -709,7 +939,10 @@ class AppSidebarBuilder {
               onTap: () {
                 Navigator.pop(context);
                 // TODO: Navigate to help
-                AppMessageHandler.showInfo(context, 'Help & Support coming soon');
+                AppMessageHandler.showInfo(
+                  context,
+                  'Help & Support coming soon',
+                );
               },
             ),
           ],
@@ -742,4 +975,3 @@ class AppSidebarBuilder {
     );
   }
 }
-

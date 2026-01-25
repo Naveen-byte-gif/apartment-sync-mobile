@@ -29,11 +29,29 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   final ScrollController _scrollController = ScrollController();
   List<File> _selectedCommentMedia = [];
 
+  String? _getUserRole() {
+    try {
+      final userJson = StorageService.getString(AppConstants.userKey);
+      if (userJson != null) {
+        final userData = jsonDecode(userJson);
+        return userData['role']?.toString();
+      }
+    } catch (e) {
+      print('❌ [FLUTTER] Error getting user role: $e');
+    }
+    return null;
+  }
+
+  bool get _isStaff => _getUserRole() == 'staff';
+  bool get _isAdmin => _getUserRole() == 'admin';
+
   @override
   void initState() {
     super.initState();
     _loadComplaintDetails();
-    _loadStaffList();
+    if (_isAdmin) {
+      _loadStaffList();
+    }
     _setupSocketListeners();
   }
 
@@ -61,7 +79,8 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
             print('📡 [FLUTTER] Complaint updated event received: $data');
             if (mounted && (data['complaintId'] == widget.complaintId || 
                            data['ticketId'] == widget.complaintId ||
-                           data['complaint']?['id'] == widget.complaintId)) {
+                           data['complaint']?['id'] == widget.complaintId ||
+                           data['id'] == widget.complaintId)) {
               _loadComplaintDetails();
             }
           });
@@ -71,12 +90,13 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
             print('📡 [FLUTTER] Ticket status updated event received: $data');
             if (mounted && (data['complaintId'] == widget.complaintId || 
                            data['ticketId'] == widget.complaintId ||
-                           data['complaint']?['id'] == widget.complaintId)) {
+                           data['complaint']?['id'] == widget.complaintId ||
+                           data['id'] == widget.complaintId)) {
               _loadComplaintDetails();
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Status updated to ${data['newStatus'] ?? 'new status'}'),
+                    content: Text('Status updated to ${data['newStatus'] ?? data['status'] ?? 'new status'}'),
                     backgroundColor: AppColors.success,
                     duration: const Duration(seconds: 2),
                   ),
@@ -85,21 +105,76 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
             }
           });
 
-          // Listen for status change confirmation (when admin makes the change)
+          // Listen for status change confirmation
           socketService.on('status_change_confirmation', (data) {
             print('📡 [FLUTTER] Status change confirmation received: $data');
             if (mounted && (data['complaintId'] == widget.complaintId || 
-                           data['ticketId'] == widget.complaintId)) {
+                           data['ticketId'] == widget.complaintId ||
+                           data['id'] == widget.complaintId)) {
               _loadComplaintDetails();
             }
           });
 
-          // Listen for complaint status updates (alternative event name)
+          // Listen for complaint status updates
           socketService.on('complaint_status_updated', (data) {
             print('📡 [FLUTTER] Complaint status updated event received: $data');
             if (mounted && (data['complaintId'] == widget.complaintId ||
                            data['ticketId'] == widget.complaintId ||
-                           data['complaint']?['id'] == widget.complaintId)) {
+                           data['complaint']?['id'] == widget.complaintId ||
+                           data['id'] == widget.complaintId)) {
+              _loadComplaintDetails();
+            }
+          });
+
+          // Listen for new comments (from other users only - our own comments are added instantly)
+          socketService.on('comment_added', (data) {
+            print('📡 [FLUTTER] Comment added event received: $data');
+            if (mounted && (data['complaintId'] == widget.complaintId ||
+                           data['ticketId'] == widget.complaintId ||
+                           data['complaint']?['id'] == widget.complaintId ||
+                           data['id'] == widget.complaintId)) {
+              // Only update if comment is from another user (not our own)
+              final commentData = data['comment'] ?? data;
+              final postedBy = commentData['postedBy'];
+              final currentUserId = userData['_id'] ?? userData['id'];
+              final commentUserId = postedBy?['_id'] ?? postedBy?['id'];
+              
+              // If comment is from current user, ignore (we already added it instantly)
+              if (currentUserId != null && commentUserId != null && 
+                  currentUserId.toString() == commentUserId.toString()) {
+                print('📡 [FLUTTER] Ignoring own comment from socket (already added instantly)');
+                return;
+              }
+              
+              // Add comment from other users instantly without full reload
+              if (commentData != null && _complaint != null) {
+                setState(() {
+                  final comments = List<Map<String, dynamic>>.from(
+                    _complaint!['comments'] ?? [],
+                  );
+                  
+                  // Check if comment already exists (avoid duplicates)
+                  final commentId = commentData['_id'] ?? commentData['id'];
+                  final exists = comments.any((c) => 
+                    (c['_id'] ?? c['id'])?.toString() == commentId?.toString()
+                  );
+                  
+                  if (!exists) {
+                    comments.insert(0, Map<String, dynamic>.from(commentData));
+                    _complaint!['comments'] = comments;
+                  }
+                });
+              }
+            }
+          });
+
+          // Listen for media uploads
+          socketService.on('media_uploaded', (data) {
+            print('📡 [FLUTTER] Media uploaded event received: $data');
+            if (mounted && (data['complaintId'] == widget.complaintId ||
+                           data['ticketId'] == widget.complaintId ||
+                           data['complaint']?['id'] == widget.complaintId ||
+                           data['id'] == widget.complaintId)) {
               _loadComplaintDetails();
             }
           });
@@ -153,10 +228,14 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   }
 
   Future<void> _refreshData() async {
-    await Future.wait([
-      _loadComplaintDetails(),
-      _loadStaffList(),
-    ]);
+    if (_isAdmin) {
+      await Future.wait([
+        _loadComplaintDetails(),
+        _loadStaffList(),
+      ]);
+    } else {
+      await _loadComplaintDetails();
+    }
   }
 
   @override
@@ -212,7 +291,6 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                     ),
                   ),
                 ),
-      floatingActionButton: _buildFloatingActionButton(),
     );
   }
 
@@ -278,9 +356,27 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     final createdBy = _complaint?['createdBy'];
     if (createdBy == null) return const SizedBox.shrink();
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    final profilePicUrl = _getProfilePictureUrl(createdBy);
+    final phone = createdBy['phoneNumber']?.toString();
+    final flatInfo = '${createdBy['wing'] ?? ''}${createdBy['wing'] != null && createdBy['flatNumber'] != null ? '-' : ''}${createdBy['flatNumber'] ?? ''}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -289,23 +385,23 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
             Row(
               children: [
                 CircleAvatar(
-                  radius: 30,
-                  backgroundColor: AppColors.primary.withOpacity(0.1),
-                  backgroundImage: _getProfilePictureUrl(createdBy) != null
-                      ? NetworkImage(_getProfilePictureUrl(createdBy)!)
+                  radius: 32,
+                  backgroundColor: AppColors.background,
+                  backgroundImage: profilePicUrl != null
+                      ? NetworkImage(profilePicUrl)
                       : null,
-                  onBackgroundImageError: _getProfilePictureUrl(createdBy) != null
+                  onBackgroundImageError: profilePicUrl != null
                       ? (exception, stackTrace) {
                           print('❌ [FLUTTER] Failed to load profile picture: $exception');
                         }
                       : null,
-                  child: _getProfilePictureUrl(createdBy) == null
+                  child: profilePicUrl == null
                       ? Text(
                           (createdBy['fullName']?[0] ?? 'R').toUpperCase(),
                           style: TextStyle(
-                            fontSize: 24,
+                            fontSize: 26,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
+                            color: AppColors.textSecondary,
                           ),
                         )
                       : null,
@@ -318,43 +414,60 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                       Text(
                         createdBy['fullName'] ?? 'Unknown',
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
                           color: AppColors.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      if (createdBy['flatNumber'] != null || createdBy['floorNumber'] != null)
-                        Text(
-                          '${createdBy['floorNumber'] ?? ''}${createdBy['flatNumber'] != null ? ' - ${createdBy['flatNumber']}' : ''}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
+                      const SizedBox(height: 6),
+                      if (flatInfo.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
                           ),
-                        ),
-                      if (createdBy['wing'] != null)
-                        Text(
-                          'Wing: ${createdBy['wing']}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textLight,
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: AppColors.border.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.home_rounded,
+                                size: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                flatInfo,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                     ],
                   ),
                 ),
+                _buildPriorityBadge(_complaint?['priority'] ?? 'Medium'),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Row(
               children: [
                 Expanded(
-                  child: _buildQuickActionButton(
-                    icon: Icons.phone,
+                  child: _buildActionButton(
+                    icon: Icons.phone_rounded,
                     label: 'Call',
                     color: AppColors.success,
                     onTap: () {
-                      final phone = createdBy['phoneNumber']?.toString();
                       if (phone != null) {
                         launchUrl(Uri.parse('tel:$phone'));
                       }
@@ -363,12 +476,11 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _buildQuickActionButton(
-                    icon: Icons.message,
-                    label: 'Message',
+                  child: _buildActionButton(
+                    icon: Icons.message_rounded,
+                    label: 'SMS',
                     color: AppColors.info,
                     onTap: () {
-                      final phone = createdBy['phoneNumber']?.toString();
                       if (phone != null) {
                         launchUrl(Uri.parse('sms:$phone'));
                       }
@@ -377,21 +489,35 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
-                const SizedBox(width: 8),
-                Text(
-                  'Raised: ${_formatDateTime(_complaint?['createdAt'])}',
-                  style: TextStyle(
-                    fontSize: 12,
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.border.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.access_time_rounded,
+                    size: 16,
                     color: AppColors.textSecondary,
                   ),
-                ),
-                const Spacer(),
-                _buildPriorityBadge(_complaint?['priority'] ?? 'Medium'),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Raised: ${_formatDateTime(_complaint?['createdAt'])}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -399,36 +525,42 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     );
   }
 
-  Widget _buildQuickActionButton({
+  Widget _buildActionButton({
     required IconData icon,
     required String label,
     required Color color,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: color.withOpacity(0.2),
+              width: 1,
             ),
-          ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -472,40 +604,139 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   }
 
   Widget _buildComplaintSummaryCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Complaint Summary',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1), // Soft indigo
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.description_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Complaint Summary',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Text(
               _complaint?['title'] ?? 'No Title',
               style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary,
+                height: 1.3,
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                _buildInfoChip('Category', _complaint?['category'] ?? 'N/A'),
-                const SizedBox(width: 8),
-                _buildInfoChip('Sub-category', _complaint?['subCategory'] ?? 'N/A'),
+                if (_complaint?['category'] != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AppColors.border.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.category_rounded,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _complaint!['category'],
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_complaint?['subCategory'] != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AppColors.border.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.label_rounded,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _complaint!['subCategory'],
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             const Text(
               'Description',
               style: TextStyle(
@@ -515,31 +746,56 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              _complaint?['description'] ?? 'No description',
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textPrimary,
-                height: 1.5,
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.border.withOpacity(0.3),
+                ),
+              ),
+              child: Text(
+                _complaint?['description'] ?? 'No description',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                  height: 1.6,
+                ),
               ),
             ),
             if (_complaint?['location']?['specificLocation'] != null) ...[
               const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.location_on, size: 18, color: AppColors.textSecondary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _complaint!['location']['specificLocation'],
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textPrimary,
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.border.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.location_on_rounded,
+                      size: 20,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _complaint!['location']['specificLocation'],
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ],
@@ -596,37 +852,99 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     final residentMedia = List<Map<String, dynamic>>.from(_complaint?['media'] ?? []);
     final adminMedia = List<Map<String, dynamic>>.from(_complaint?['adminMedia'] ?? []);
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Media Attachments',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B82F6), // Soft blue
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.photo_library_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Media Attachments',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             
             // Resident Attachments
             if (residentMedia.isNotEmpty) ...[
-              const Text(
-                'Resident Attachments',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
+              Row(
+                children: [
+                  Icon(
+                    Icons.person_rounded,
+                    size: 16,
+                    color: AppColors.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Resident Attachments',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.info.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${residentMedia.length}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.info,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 100,
+                height: 120,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: residentMedia.length,
@@ -640,22 +958,53 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                   },
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
             ],
             
             // Admin Media
-            const Text(
-              'Admin Evidence',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textSecondary,
-              ),
+            Row(
+              children: [
+                Icon(
+                  Icons.admin_panel_settings_rounded,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'Admin Evidence',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                if (adminMedia.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${adminMedia.length}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 12),
             if (adminMedia.isNotEmpty)
               SizedBox(
-                height: 100,
+                height: 120,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: adminMedia.length,
@@ -669,16 +1018,57 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                     );
                   },
                 ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.border.withOpacity(0.3),
+                    style: BorderStyle.solid,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    'No evidence added yet',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textLight,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
               ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: _isUploadingMedia ? null : _showMediaUploadDialog,
-              icon: const Icon(Icons.add_photo_alternate),
-              label: const Text('Add Evidence'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isUploadingMedia ? null : _showMediaUploadDialog,
+                icon: _isUploadingMedia
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.camera_alt_rounded),
+                label: Text(_isUploadingMedia ? 'Uploading...' : 'Add Evidence'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3B82F6), // Soft blue
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
               ),
             ),
           ],
@@ -690,53 +1080,92 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   Widget _buildMediaThumbnail(String url, String type, {bool isAdmin = false, String? purpose}) {
     return Container(
       margin: const EdgeInsets.only(right: 12),
-      width: 100,
-      height: 100,
+      width: 120,
+      height: 120,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isAdmin ? AppColors.primary : AppColors.border,
-          width: isAdmin ? 2 : 1,
+          color: isAdmin
+              ? AppColors.primary
+              : AppColors.border.withOpacity(0.3),
+          width: isAdmin ? 2.5 : 1.5,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: isAdmin
+                ? AppColors.primary.withOpacity(0.2)
+                : Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Stack(
           children: [
             if (type == 'image')
               Image.network(
                 url,
-                width: 100,
-                height: 100,
+                width: 120,
+                height: 120,
                 fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
+                    color: AppColors.background,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                            : null,
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      ),
+                    ),
+                  );
+                },
                 errorBuilder: (context, error, stackTrace) {
                   return Container(
                     color: AppColors.background,
-                    child: const Icon(Icons.broken_image, color: AppColors.textLight),
+                    child: const Icon(
+                      Icons.broken_image_rounded,
+                      color: AppColors.textLight,
+                      size: 40,
+                    ),
                   );
                 },
               )
             else
               Container(
                 color: AppColors.background,
-                child: const Icon(Icons.videocam, size: 40, color: AppColors.textLight),
+                child: const Icon(
+                  Icons.videocam_rounded,
+                  size: 40,
+                  color: AppColors.textLight,
+                ),
               ),
             if (isAdmin && purpose != null)
               Positioned(
-                top: 4,
-                right: 4,
+                top: 6,
+                right: 6,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(4),
+                    color: const Color(0xFF3B82F6), // Soft blue
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    purpose,
+                    purpose.toUpperCase(),
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 8,
+                      fontSize: 9,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
@@ -746,7 +1175,20 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: () => _showMediaViewer(url, type),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: Colors.black.withOpacity(0.2),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.zoom_in_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
                 ),
               ),
             ),
@@ -759,21 +1201,63 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   void _showMediaViewer(String url, String type) {
     showDialog(
       context: context,
+      barrierColor: Colors.black87,
       builder: (context) => Dialog(
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
+        insetPadding: EdgeInsets.zero,
         child: Stack(
           children: [
             Center(
-              child: type == 'image'
-                  ? Image.network(url)
-                  : const Icon(Icons.videocam, size: 64, color: Colors.white),
+              child: InteractiveViewer(
+                child: type == 'image'
+                    ? Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            padding: const EdgeInsets.all(40),
+                            child: const Icon(
+                              Icons.broken_image_rounded,
+                              size: 64,
+                              color: Colors.white70,
+                            ),
+                          );
+                        },
+                      )
+                    : Container(
+                        padding: const EdgeInsets.all(40),
+                        child: const Icon(
+                          Icons.videocam_rounded,
+                          size: 64,
+                          color: Colors.white,
+                        ),
+                      ),
+              ),
             ),
             Positioned(
-              top: 8,
-              right: 8,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
+              top: 40,
+              right: 20,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
               ),
             ),
           ],
@@ -793,28 +1277,66 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: AppColors.border.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             const Text(
               'Add Evidence',
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 20,
                 fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 20),
             ListTile(
-              leading: const Icon(Icons.camera_alt, color: AppColors.primary),
-              title: const Text('Take Photo'),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6), // Soft blue
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.camera_alt_rounded, color: Colors.white),
+              ),
+              title: const Text(
+                'Take Photo',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               onTap: () {
                 Navigator.pop(context);
-                _pickImage(ImageSource.camera);
+                _pickImageFromSource(ImageSource.camera);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library, color: AppColors.primary),
-              title: const Text('Choose from Gallery'),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1), // Soft indigo
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.photo_library_rounded, color: Colors.white),
+              ),
+              title: const Text(
+                'Choose from Gallery',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               onTap: () {
                 Navigator.pop(context);
-                _pickImage(ImageSource.gallery);
+                _pickImageFromSource(ImageSource.gallery);
               },
             ),
           ],
@@ -832,8 +1354,9 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
         maxHeight: 1920,
       );
 
-      if (image != null) {
-        await _uploadAdminMedia(File(image.path));
+      if (image != null && mounted) {
+        // Upload without reloading - just update state
+        await _uploadAdminMedia(File(image.path), skipReload: true);
       }
     } catch (e) {
       if (mounted) {
@@ -844,7 +1367,7 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     }
   }
 
-  Future<void> _uploadAdminMedia(File file) async {
+  Future<void> _uploadAdminMedia(File file, {bool skipReload = false}) async {
     setState(() => _isUploadingMedia = true);
     try {
       final response = await ApiService.uploadFile(
@@ -852,27 +1375,82 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
         file,
         fieldName: 'media',
         additionalFields: {
-          'purpose': 'evidence', // Can be: inspection, resolution, evidence, other
-          'description': '', // Optional description
+          'purpose': 'evidence',
+          'description': '',
         },
       );
 
       if (response['success'] == true) {
         if (mounted) {
+          // Update local state immediately for instant feedback
+          final uploadedMedia = response['data']?['media'] ?? 
+                                response['data']?['adminMedia'] ??
+                                response['data'];
+          
+          if (uploadedMedia != null && _complaint != null) {
+            setState(() {
+              final adminMedia = List<Map<String, dynamic>>.from(
+                _complaint!['adminMedia'] ?? [],
+              );
+              
+              // Add the new media item
+              if (uploadedMedia is Map) {
+                adminMedia.insert(0, Map<String, dynamic>.from(uploadedMedia));
+              } else if (uploadedMedia is List && uploadedMedia.isNotEmpty) {
+                adminMedia.insertAll(0, 
+                  uploadedMedia.cast<Map<String, dynamic>>().map((m) => 
+                    Map<String, dynamic>.from(m)
+                  ),
+                );
+              }
+              
+              _complaint!['adminMedia'] = adminMedia;
+            });
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Evidence uploaded successfully'),
-              backgroundColor: AppColors.success,
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Evidence uploaded successfully!',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF10B981), // Soft green
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
-          await _loadComplaintDetails();
+          
+          // No reload - instant update only
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(response['message'] ?? 'Upload failed'),
-              backgroundColor: AppColors.error,
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(response['message'] ?? 'Upload failed'),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFEF4444), // Soft red
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
         }
@@ -881,8 +1459,20 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error uploading: $e'),
-            backgroundColor: AppColors.error,
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Error uploading: ${e.toString().length > 50 ? e.toString().substring(0, 50) + "..." : e.toString()}'),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
@@ -896,24 +1486,61 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   Widget _buildStatusAndAssignmentCard() {
     final status = _complaint?['status'] ?? 'Open';
     final assignedTo = _complaint?['assignedTo'];
+    final assignedStaff = assignedTo?['staff'];
+    final assignedStaffUser = assignedStaff is Map
+        ? assignedStaff['user'] ?? {}
+        : {};
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Status & Assignment',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6), // Soft purple
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.settings_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Status & Assignment',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             
             // Status Dropdown
             const Text(
@@ -925,43 +1552,61 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
               ),
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: status,
-              decoration: InputDecoration(
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.border.withOpacity(0.3),
                 ),
-                filled: true,
-                fillColor: AppColors.background,
               ),
-              items: ['Open', 'Assigned', 'In Progress', 'Resolved', 'Closed']
-                  .map((s) => DropdownMenuItem(
-                        value: s,
-                        child: Row(
-                          children: [
-                            Icon(
-                              _getStatusIcon(s),
-                              size: 18,
-                              color: _getStatusColor(s),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(s),
-                          ],
-                        ),
-                      ))
-                  .toList(),
-              onChanged: _isUpdatingStatus
-                  ? null
-                  : (newStatus) {
-                      if (newStatus != null && newStatus != status) {
-                        _updateStatus(newStatus);
-                      }
-                    },
+              child: DropdownButtonFormField<String>(
+                value: status,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                items: ['Open', 'Assigned', 'In Progress', 'Resolved', 'Closed']
+                    .map((s) => DropdownMenuItem(
+                          value: s,
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: _getStatusColor(s).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  _getStatusIcon(s),
+                                  size: 16,
+                                  color: _getStatusColor(s),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(s),
+                            ],
+                          ),
+                        ))
+                    .toList(),
+                onChanged: _isUpdatingStatus
+                    ? null
+                    : (newStatus) {
+                        if (newStatus != null && newStatus != status) {
+                          _updateStatus(newStatus);
+                        }
+                      },
+              ),
             ),
             if (_isUpdatingStatus)
-              const Padding(
-                padding: EdgeInsets.only(top: 8.0),
-                child: LinearProgressIndicator(),
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: LinearProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                ),
               ),
             
             const SizedBox(height: 20),
@@ -976,26 +1621,52 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
               ),
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _complaint?['priority'] ?? 'Medium',
-              decoration: InputDecoration(
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.border.withOpacity(0.3),
                 ),
-                filled: true,
-                fillColor: AppColors.background,
               ),
-              items: ['Low', 'Medium', 'High', 'Emergency']
-                  .map((p) => DropdownMenuItem(
-                        value: p,
-                        child: Text(p),
-                      ))
-                  .toList(),
-              onChanged: (newPriority) {
-                if (newPriority != null) {
-                  _updatePriority(newPriority);
-                }
-              },
+              child: DropdownButtonFormField<String>(
+                value: _complaint?['priority'] ?? 'Medium',
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                ),
+                items: ['Low', 'Medium', 'High', 'Emergency']
+                    .map((p) => DropdownMenuItem(
+                          value: p,
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: _getPriorityColor(p).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.flag_rounded,
+                                  size: 16,
+                                  color: _getPriorityColor(p),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(p),
+                            ],
+                          ),
+                        ))
+                    .toList(),
+                onChanged: (newPriority) {
+                  if (newPriority != null) {
+                    _updatePriority(newPriority);
+                  }
+                },
+              ),
             ),
             
             const SizedBox(height: 20),
@@ -1011,93 +1682,175 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
             ),
             const SizedBox(height: 8),
             if (_staffList != null && _staffList!.isNotEmpty)
-              DropdownButtonFormField<String>(
-                value: assignedTo?['staff']?['_id']?.toString() ?? 
-                       assignedTo?['staff']?.toString(),
-                decoration: InputDecoration(
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppColors.border.withOpacity(0.3),
                   ),
-                  filled: true,
-                  fillColor: AppColors.background,
-                  hintText: 'Select staff member',
                 ),
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: null,
-                    child: Text('Unassigned'),
+                child: DropdownButtonFormField<String>(
+                  value: assignedTo?['staff']?['_id']?.toString() ?? 
+                         assignedTo?['staff']?.toString(),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    hintText: 'Select staff member',
                   ),
-                  ..._staffList!.map((staff) {
-                    final staffId = staff['_id']?.toString() ?? '';
-                    final userName = staff['user']?['fullName'] ?? 'Unknown';
-                    final specialization = staff['specialization'] ?? '';
-                    return DropdownMenuItem<String>(
-                      value: staffId,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(userName),
-                          if (specialization.isNotEmpty)
-                            Text(
-                              specialization,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textLight,
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('Unassigned'),
+                    ),
+                    ..._staffList!.map((staff) {
+                      final staffId = staff['_id']?.toString() ?? '';
+                      final user = staff['user'] ?? {};
+                      final userName = user['fullName'] ?? 'Unknown';
+                      final specialization = staff['specialization'] ?? '';
+                      final staffProfilePic = _getProfilePictureUrl(user);
+                      return DropdownMenuItem<String>(
+                        value: staffId,
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: AppColors.primary.withOpacity(0.1),
+                              backgroundImage: staffProfilePic != null
+                                  ? NetworkImage(staffProfilePic)
+                                  : null,
+                              child: staffProfilePic == null
+                                  ? Text(
+                                      (userName[0] ?? 'S').toUpperCase(),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.primary,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    userName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  if (specialization.isNotEmpty)
+                                    Text(
+                                      specialization,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textLight,
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-                onChanged: (staffId) {
-                  if (staffId != null) {
-                    _assignStaff(staffId);
-                  } else {
-                    // Unassign
-                    _assignStaff('');
-                  }
-                },
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                  onChanged: (staffId) {
+                    if (staffId != null) {
+                      _assignStaff(staffId);
+                    } else {
+                      _assignStaff('');
+                    }
+                  },
+                ),
               )
             else
-              const Text(
-                'No staff available',
-                style: TextStyle(color: AppColors.textLight),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'No staff available',
+                  style: TextStyle(color: AppColors.textLight),
+                ),
               ),
             
             // Current Assignment Display
-            if (assignedTo != null && assignedTo['staff'] != null) ...[
+            if (assignedTo != null && assignedStaff != null) ...[
               const SizedBox(height: 16),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.info.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.info.withOpacity(0.3)),
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppColors.border.withOpacity(0.3),
+                    width: 1,
+                  ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.person, color: AppColors.info),
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: AppColors.info.withOpacity(0.1),
+                      backgroundImage: _getProfilePictureUrl(assignedStaffUser) != null
+                          ? NetworkImage(_getProfilePictureUrl(assignedStaffUser)!)
+                          : null,
+                      child: _getProfilePictureUrl(assignedStaffUser) == null
+                          ? Text(
+                              (assignedStaffUser['fullName']?[0] ?? 'S').toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.info,
+                              ),
+                            )
+                          : null,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            assignedTo['staff']?['user']?['fullName'] ?? 'Unknown',
+                            assignedStaffUser['fullName'] ?? 'Unknown',
                             style: const TextStyle(
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          if (assignedTo['assignedAt'] != null)
-                            Text(
-                              'Assigned: ${_formatDateTime(assignedTo['assignedAt'])}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                              ),
+                          if (assignedTo['assignedAt'] != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time_rounded,
+                                  size: 12,
+                                  color: AppColors.textLight,
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    'Assigned: ${_formatDateTime(assignedTo['assignedAt'])}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textLight,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
+                          ],
                         ],
                       ),
                     ),
@@ -1111,12 +1864,41 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     );
   }
 
+  Color _getPriorityColor(String priority) {
+    switch (priority.toLowerCase()) {
+      case 'emergency':
+        return AppColors.error;
+      case 'high':
+        return Colors.orange;
+      case 'medium':
+        return AppColors.warning;
+      case 'low':
+        return AppColors.success;
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+
   Widget _buildInternalNotesCard() {
     final notes = List<Map<String, dynamic>>.from(_complaint?['internalNotes'] ?? []);
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -1124,38 +1906,83 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
           children: [
             Row(
               children: [
-                const Icon(Icons.lock, size: 20, color: AppColors.textSecondary),
-                const SizedBox(width: 8),
-                const Text(
-                  'Internal Admin Notes',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B), // Soft amber
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.lock_rounded,
+                    color: Colors.white,
+                    size: 20,
                   ),
                 ),
-                const Spacer(),
-                Text(
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Internal Admin Notes',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: AppColors.border.withOpacity(0.3),
+                  ),
+                ),
+                child: Text(
                   'Private',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textLight,
-                    fontStyle: FontStyle.italic,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textSecondary,
                   ),
                 ),
+              ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             
             // Notes List
             if (notes.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'No internal notes yet',
-                  style: TextStyle(
-                    color: AppColors.textLight,
-                    fontStyle: FontStyle.italic,
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.border.withOpacity(0.3),
+                  ),
+                ),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.note_add_outlined,
+                        size: 40,
+                        color: AppColors.textLight,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No internal notes yet',
+                        style: TextStyle(
+                          color: AppColors.textLight,
+                          fontStyle: FontStyle.italic,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -1165,29 +1992,58 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
             const SizedBox(height: 16),
             
             // Add Note Field
-            TextField(
-              controller: _internalNoteController,
-              decoration: InputDecoration(
-                hintText: 'Add internal note (not visible to residents)...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.border.withOpacity(0.3),
                 ),
-                filled: true,
-                fillColor: AppColors.background,
               ),
-              maxLines: 3,
+              child: TextField(
+                controller: _internalNoteController,
+                decoration: InputDecoration(
+                  hintText: 'Add internal note (not visible to residents)...',
+                  hintStyle: TextStyle(
+                    color: AppColors.textLight,
+                    fontSize: 13,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.all(16),
+                  prefixIcon: Icon(
+                    Icons.edit_note_rounded,
+                    color: AppColors.textSecondary,
+                    size: 20,
+                  ),
+                ),
+                maxLines: 3,
+                style: const TextStyle(fontSize: 14),
+              ),
             ),
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: _isAddingNote ? null : _addInternalNote,
-                icon: const Icon(Icons.note_add),
-                label: const Text('Add Note'),
+                icon: _isAddingNote
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.note_add_rounded),
+                    label: Text(_isAddingNote ? 'Adding...' : 'Add Note'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: const Color(0xFFF59E0B), // Soft amber
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
                 ),
               ),
             ),
@@ -1198,44 +2054,102 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   }
 
   Widget _buildNoteItem(Map<String, dynamic> note) {
+    final addedBy = note['addedBy'];
+    final addedByMap = addedBy is Map
+        ? Map<String, dynamic>.from(addedBy)
+        : <String, dynamic>{};
+    final profilePicUrl = _getProfilePictureUrl(addedByMap);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            note['note'] ?? '',
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.person, size: 14, color: AppColors.textLight),
-              const SizedBox(width: 4),
-              Text(
-                note['addedBy']?['fullName'] ?? 'Admin',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textLight,
-                ),
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: AppColors.background,
+                backgroundImage: profilePicUrl != null
+                    ? NetworkImage(profilePicUrl)
+                    : null,
+                onBackgroundImageError: profilePicUrl != null
+                    ? (exception, stackTrace) {
+                        print('❌ [FLUTTER] Failed to load profile picture: $exception');
+                      }
+                    : null,
+                child: profilePicUrl == null
+                    ? Text(
+                        (addedByMap['fullName']?[0] ?? 'A').toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textSecondary,
+                        ),
+                      )
+                    : null,
               ),
-              const SizedBox(width: 16),
-              Icon(Icons.access_time, size: 14, color: AppColors.textLight),
-              const SizedBox(width: 4),
-              Text(
-                _formatDateTime(note['addedAt']),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textLight,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      addedByMap['fullName'] ?? 'Admin',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      note['note'] ?? '',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.access_time_rounded,
+                          size: 12,
+                          color: AppColors.textLight,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            _formatDateTime(note['addedAt']),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textLight,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1263,12 +2177,10 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     
     // Add comments
     for (var comment in comments) {
-      // Ensure comment data is properly converted to Map<String, dynamic>
       final commentData = comment is Map
           ? Map<String, dynamic>.from(comment)
           : <String, dynamic>{};
       
-      // Ensure postedBy is properly converted
       if (commentData['postedBy'] != null && commentData['postedBy'] is Map) {
         commentData['postedBy'] = Map<String, dynamic>.from(commentData['postedBy']);
       }
@@ -1287,32 +2199,107 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
       return bTime.compareTo(aTime); // Newest first
     });
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Communication Timeline',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981), // Soft green
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.timeline_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Communication Timeline',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                if (allEvents.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AppColors.border.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Text(
+                      '${allEvents.length}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             
             if (allEvents.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'No activity yet',
-                  style: TextStyle(
-                    color: AppColors.textLight,
-                    fontStyle: FontStyle.italic,
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.border.withOpacity(0.3),
+                  ),
+                ),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 48,
+                        color: AppColors.textLight,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No activity yet',
+                        style: TextStyle(
+                          color: AppColors.textLight,
+                          fontStyle: FontStyle.italic,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               )
@@ -1341,70 +2328,167 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   Widget _buildStatusChangeEvent(Map<String, dynamic> data, dynamic timestamp) {
     final status = data['status'] ?? '';
     final description = data['description'] ?? '';
-    final updatedBy = data['updatedBy'];
+    final updatedByRaw = data['updatedBy'];
+    final updatedBy = updatedByRaw is Map
+        ? Map<String, dynamic>.from(updatedByRaw)
+        : <String, dynamic>{};
+    final statusColor = _getStatusColor(status);
+    final profilePicUrl = _getProfilePictureUrl(updatedBy);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _getStatusColor(status).withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _getStatusColor(status).withOpacity(0.3)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: statusColor.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: _getStatusColor(status),
+              color: statusColor,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.update, color: Colors.white, size: 20),
+            child: Icon(
+              _getStatusIcon(status),
+              color: Colors.white,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Status Changed: $status',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Status Changed: $status',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: statusColor,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 if (description.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    description,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      description,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                        height: 1.4,
+                      ),
                     ),
                   ),
                 ],
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    Icon(Icons.person, size: 14, color: AppColors.textLight),
-                    const SizedBox(width: 4),
-                    Text(
-                      updatedBy?['fullName'] ?? 'Admin',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textLight,
-                      ),
+                    CircleAvatar(
+                      radius: 12,
+                      backgroundColor: AppColors.primary.withOpacity(0.1),
+                      backgroundImage: profilePicUrl != null
+                          ? NetworkImage(profilePicUrl)
+                          : null,
+                      child: profilePicUrl == null
+                          ? Text(
+                              (updatedBy['fullName']?[0] ?? 'A').toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primary,
+                              ),
+                            )
+                          : null,
                     ),
-                    const SizedBox(width: 16),
-                    Icon(Icons.access_time, size: 14, color: AppColors.textLight),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatDateTime(timestamp),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textLight,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  updatedBy['fullName'] ?? 'Admin',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (updatedBy['role'] != null) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _getRoleBadgeColor(updatedBy['role']?.toString().toLowerCase() ?? ''),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    _getRoleBadgeLabel(updatedBy['role']?.toString().toLowerCase() ?? ''),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time_rounded,
+                                size: 11,
+                                color: AppColors.textLight,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  _formatDateTime(timestamp),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textLight,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -1418,91 +2502,200 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   }
 
   Widget _buildCommentEvent(Map<String, dynamic> data, dynamic timestamp) {
-    final text = data['text'] ?? '';
+    final text = data['text']?.toString().trim() ?? '';
     final postedByRaw = data['postedBy'];
     final postedBy = postedByRaw is Map
         ? Map<String, dynamic>.from(postedByRaw)
         : null;
     final media = List<Map<String, dynamic>>.from(data['media'] ?? []);
 
-    // Extract profile picture URL once
+    // Get role from postedBy
+    final role = postedBy?['role']?.toString().toLowerCase() ?? 'resident';
+    final isAdmin = role == 'admin';
+    final isStaff = role == 'staff';
+    
     final profilePicUrl = postedBy != null ? _getProfilePictureUrl(postedBy) : null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 16,
-            backgroundColor: AppColors.primary.withOpacity(0.1),
-            backgroundImage: profilePicUrl != null
-                ? NetworkImage(profilePicUrl)
-                : null,
-            onBackgroundImageError: profilePicUrl != null
-                ? (exception, stackTrace) {
-                    print('❌ [FLUTTER] Failed to load profile picture: $exception');
-                  }
-                : null,
-            child: profilePicUrl == null
-                ? Text(
-                    (postedBy?['fullName']?[0] ?? 'U').toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  )
-                : null,
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isAdmin
+                    ? AppColors.primary
+                    : AppColors.border.withOpacity(0.3),
+                width: 2,
+              ),
+            ),
+            child: CircleAvatar(
+              radius: 20,
+              backgroundColor: isAdmin
+                  ? AppColors.primary.withOpacity(0.1)
+                  : AppColors.background,
+              backgroundImage: profilePicUrl != null
+                  ? NetworkImage(profilePicUrl)
+                  : null,
+              onBackgroundImageError: profilePicUrl != null
+                  ? (exception, stackTrace) {
+                      print('❌ [FLUTTER] Failed to load profile picture: $exception');
+                    }
+                  : null,
+              child: profilePicUrl == null
+                  ? Text(
+                      (postedBy?['fullName']?[0] ?? 'U').toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: isAdmin ? AppColors.primary : AppColors.textSecondary,
+                      ),
+                    )
+                  : null,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  postedBy?['fullName'] ?? 'Unknown',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  text,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                if (media.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 60,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: media.length,
-                      itemBuilder: (context, index) {
-                        return _buildMediaThumbnail(
-                          media[index]['url'] ?? '',
-                          media[index]['type'] ?? 'image',
-                        );
-                      },
+                Row(
+                  children: [
+                    Text(
+                      postedBy?['fullName'] ?? 'Unknown',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
+                    if (role.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getRoleBadgeColor(role),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          _getRoleBadgeLabel(role),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (text.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    text,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+                if (media.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: media.map((m) {
+                      return GestureDetector(
+                        onTap: () => _showMediaViewer(
+                          m['url'] ?? '',
+                          m['type'] ?? 'image',
+                        ),
+                        child: Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.border.withOpacity(0.3),
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: m['type'] == 'image'
+                                ? Image.network(
+                                    m['url'] ?? '',
+                                    width: 100,
+                                    height: 100,
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        color: AppColors.background,
+                                        child: Center(
+                                          child: CircularProgressIndicator(
+                                            value: loadingProgress.expectedTotalBytes != null
+                                                ? loadingProgress.cumulativeBytesLoaded /
+                                                    loadingProgress.expectedTotalBytes!
+                                                : null,
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              AppColors.primary,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        color: AppColors.background,
+                                        child: const Icon(
+                                          Icons.broken_image_rounded,
+                                          color: AppColors.textLight,
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Container(
+                                    color: AppColors.background,
+                                    child: const Icon(
+                                      Icons.videocam_rounded,
+                                      color: AppColors.textLight,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
                 ],
                 const SizedBox(height: 8),
                 Text(
                   _formatDateTime(timestamp),
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     color: AppColors.textLight,
                   ),
                 ),
@@ -1520,9 +2713,23 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
       return const SizedBox.shrink();
     }
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -1530,53 +2737,87 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
           children: [
             Row(
               children: [
-                Icon(Icons.comment, color: AppColors.primary),
-                const SizedBox(width: 8),
-                const Text(
-                  'Add Comment',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B82F6), // Soft blue
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.comment_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Add Comment',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            TextField(
-              controller: _commentController,
-              decoration: InputDecoration(
-                hintText: 'Type your comment...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.border.withOpacity(0.3),
                 ),
-                filled: true,
-                fillColor: AppColors.background,
               ),
-              maxLines: 4,
+              child: TextField(
+                controller: _commentController,
+                decoration: InputDecoration(
+                  hintText: 'Type your comment...',
+                  hintStyle: TextStyle(
+                    color: AppColors.textLight,
+                    fontSize: 14,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.all(16),
+                ),
+                maxLines: 4,
+                style: const TextStyle(fontSize: 14),
+              ),
             ),
             if (_selectedCommentMedia.isNotEmpty) ...[
               const SizedBox(height: 12),
-              SizedBox(
-                height: 80,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _selectedCommentMedia.length,
-                  itemBuilder: (context, index) {
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.border.withOpacity(0.3),
+                  ),
+                ),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _selectedCommentMedia.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final file = entry.value;
                     return Stack(
                       children: [
                         Container(
-                          margin: const EdgeInsets.only(right: 8),
                           width: 80,
                           height: 80,
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.border),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.primary.withOpacity(0.3),
+                            ),
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
                             child: Image.file(
-                              _selectedCommentMedia[index],
+                              file,
                               fit: BoxFit.cover,
                             ),
                           ),
@@ -1593,12 +2834,12 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                             child: Container(
                               padding: const EdgeInsets.all(4),
                               decoration: BoxDecoration(
-                                color: Colors.black54,
+                                color: AppColors.error,
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
-                                Icons.close,
-                                size: 16,
+                                Icons.close_rounded,
+                                size: 14,
                                 color: Colors.white,
                               ),
                             ),
@@ -1606,17 +2847,29 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                         ),
                       ],
                     );
-                  },
+                  }).toList(),
                 ),
               ),
             ],
             const SizedBox(height: 12),
             Row(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.photo_library, color: AppColors.primary),
-                  onPressed: _pickCommentMedia,
-                  tooltip: 'Add Photo',
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.border.withOpacity(0.3),
+                    ),
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.photo_camera_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                    onPressed: _pickCommentMedia,
+                    tooltip: 'Add Photo',
+                  ),
                 ),
                 const Spacer(),
                 ElevatedButton.icon(
@@ -1625,13 +2878,24 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
                         )
-                      : const Icon(Icons.send),
-                  label: const Text('Post Comment'),
+                      : const Icon(Icons.send_rounded),
+                  label: Text(_isPostingComment ? 'Posting...' : 'Post'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
+                    backgroundColor: const Color(0xFF3B82F6), // Soft blue
                     foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
                   ),
                 ),
               ],
@@ -1643,16 +2907,78 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   }
 
   Future<void> _pickCommentMedia() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: AppColors.border.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B82F6), // Soft blue
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.camera_alt_rounded, color: Colors.white),
+              ),
+              title: const Text('Take Photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImageFromSource(ImageSource.camera, isComment: true);
+              },
+            ),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1), // Soft indigo
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.photo_library_rounded, color: Colors.white),
+              ),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImageFromSource(ImageSource.gallery, isComment: true);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImageFromSource(ImageSource source, {bool isComment = false}) async {
     try {
       final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
       );
 
-      if (image != null) {
-        setState(() {
-          _selectedCommentMedia.add(File(image.path));
-        });
+      if (image != null && mounted) {
+        if (isComment) {
+          setState(() {
+            _selectedCommentMedia.add(File(image.path));
+          });
+        } else {
+          await _uploadAdminMedia(File(image.path), skipReload: true);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1668,7 +2994,10 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     if (text.isEmpty && _selectedCommentMedia.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a comment or add media')),
+          const SnackBar(
+            content: Text('Please enter a comment or add media'),
+            backgroundColor: AppColors.warning,
+          ),
         );
       }
       return;
@@ -1684,15 +3013,12 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
         mediaList = [];
         for (var file in _selectedCommentMedia) {
           try {
-            // TODO: Replace with generic upload endpoint
-            // Upload to generic media endpoint
             final uploadResponse = await ApiService.uploadFile(
               '/upload/media',
               file,
               fieldName: 'image',
             );
             if (uploadResponse['success'] == true) {
-              // Extract media data from response
               final mediaData = uploadResponse['data']?['media'] ?? uploadResponse['data'];
               mediaList.add(ComplaintMedia(
                 url: mediaData['url'] ?? uploadResponse['data']?['url'] ?? '',
@@ -1710,31 +3036,134 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
       final response = await ApiService.post(
         '${ApiConstants.complaints}/${widget.complaintId}/comments',
         {
-          'text': text.isEmpty ? ' ' : text, // Backend requires text, use space if empty
+          'text': text.isEmpty ? ' ' : text,
           if (mediaList != null && mediaList.isNotEmpty)
             'media': mediaList.map((m) => m.toJson()).toList(),
         },
       );
 
       if (response['success'] == true) {
-        _commentController.clear();
-        setState(() {
-          _selectedCommentMedia.clear();
-        });
-        _loadComplaintDetails();
+        // Get current user info for instant display
+        final userJson = StorageService.getString(AppConstants.userKey);
+        Map<String, dynamic>? currentUser;
+        if (userJson != null) {
+          try {
+            currentUser = jsonDecode(userJson);
+          } catch (e) {
+            print('Error parsing user data: $e');
+          }
+        }
+        
+        // Prepare comment data from response or create new
+        final newComment = response['data']?['comment'] ?? 
+                          response['data']?['data'] ?? 
+                          response['data'];
+        
+        // Create comment object with all necessary data
+        Map<String, dynamic> commentData;
+        if (newComment is Map && newComment.isNotEmpty) {
+          commentData = Map<String, dynamic>.from(newComment);
+          // Ensure postedBy is properly set
+          if (commentData['postedBy'] == null && currentUser != null) {
+            commentData['postedBy'] = currentUser;
+          }
+          // Ensure postedAt is set
+          if (commentData['postedAt'] == null) {
+            commentData['postedAt'] = DateTime.now().toIso8601String();
+          }
+          // Ensure media is properly formatted
+          if (mediaList != null && mediaList.isNotEmpty && commentData['media'] == null) {
+            commentData['media'] = mediaList.map((m) => m.toJson()).toList();
+          }
+        } else {
+          // Create new comment object if response doesn't have it
+          commentData = <String, dynamic>{
+            'text': text.isEmpty ? ' ' : text,
+            'postedAt': DateTime.now().toIso8601String(),
+            'postedBy': currentUser ?? {'fullName': 'Admin', 'role': 'admin'},
+            if (mediaList != null && mediaList.isNotEmpty)
+              'media': mediaList.map((m) => m.toJson()).toList(),
+          };
+        }
+        
+        // Update state immediately - instant feedback
+        if (_complaint != null) {
+          setState(() {
+            // Clear inputs first
+            _commentController.clear();
+            _selectedCommentMedia.clear();
+            
+            // Add comment to the list immediately
+            final comments = List<Map<String, dynamic>>.from(
+              _complaint!['comments'] ?? [],
+            );
+            comments.insert(0, commentData);
+            _complaint!['comments'] = comments;
+          });
+        } else {
+          // Clear inputs even if complaint is null
+          _commentController.clear();
+          setState(() {
+            _selectedCommentMedia.clear();
+          });
+        }
+        
         if (mounted) {
+          // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Comment posted successfully'),
-              backgroundColor: AppColors.success,
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Comment posted successfully!',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF3B82F6), // Soft blue
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
+          
+          // Scroll to top to show new comment after a brief delay
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted && _scrollController.hasClients) {
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            }
+          });
         }
+        
+        // NO RELOAD - Instant update only, real-time display
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(response['message'] ?? 'Failed to post comment'),
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(response['message'] ?? 'Failed to post comment'),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFEF4444),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
         }
@@ -1743,7 +3172,22 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
       print('❌ [FLUTTER] Error posting comment: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error posting comment: ${e.toString()}')),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Error: ${e.toString().length > 50 ? e.toString().substring(0, 50) + "..." : e.toString()}'),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
         );
       }
     } finally {
@@ -1756,9 +3200,23 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
   Widget _buildResolutionCard() {
     final resolution = _complaint?['resolution'];
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.border.withOpacity(0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -1766,41 +3224,82 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
           children: [
             Row(
               children: [
-                Icon(Icons.check_circle, color: AppColors.success),
-                const SizedBox(width: 8),
-                const Text(
-                  'Resolution',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981), // Soft green
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Resolution',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             if (resolution?['description'] != null)
-              Text(
-                resolution['description'],
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textPrimary,
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.success.withOpacity(0.2),
+                  ),
+                ),
+                child: Text(
+                  resolution['description'],
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                    height: 1.5,
+                  ),
                 ),
               ),
             if (resolution?['resolvedAt'] != null) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Resolved: ${_formatDateTime(resolution['resolvedAt'])}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.success.withOpacity(0.2),
                   ),
-                ],
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.access_time_rounded,
+                      size: 18,
+                      color: AppColors.success,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Resolved: ${_formatDateTime(resolution['resolvedAt'])}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],
@@ -1809,66 +3308,6 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     );
   }
 
-  Widget? _buildFloatingActionButton() {
-    final status = _complaint?['status'] ?? 'Open';
-    if (status == 'Closed' || status == 'Cancelled') return null;
-
-    return FloatingActionButton.extended(
-      onPressed: () => _showQuickActions(),
-      backgroundColor: AppColors.primary,
-      icon: const Icon(Icons.add, color: Colors.white),
-      label: const Text(
-        'Quick Actions',
-        style: TextStyle(color: Colors.white),
-      ),
-    );
-  }
-
-  void _showQuickActions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.note_add, color: AppColors.primary),
-              title: const Text('Add Internal Note'),
-              onTap: () {
-                Navigator.pop(context);
-                // Focus on note field
-                _scrollController.animateTo(
-                  _scrollController.position.maxScrollExtent,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOut,
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.add_photo_alternate, color: AppColors.primary),
-              title: const Text('Add Evidence'),
-              onTap: () {
-                Navigator.pop(context);
-                _showMediaUploadDialog();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_add, color: AppColors.primary),
-              title: const Text('Assign Staff'),
-              onTap: () {
-                Navigator.pop(context);
-                // Scroll to assignment section
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Future<void> _updateStatus(String newStatus) async {
     final oldStatus = _complaint?['status'] ?? 'Unknown';
@@ -2023,6 +3462,18 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
     if (note.isEmpty) return;
 
     setState(() => _isAddingNote = true);
+    
+    // Get current user info for instant display
+    final userJson = StorageService.getString(AppConstants.userKey);
+    Map<String, dynamic>? currentUser;
+    if (userJson != null) {
+      try {
+        currentUser = jsonDecode(userJson);
+      } catch (e) {
+        print('Error parsing user data: $e');
+      }
+    }
+
     try {
       final response = await ApiService.post(
         ApiConstants.complaintInternalNotes(widget.complaintId),
@@ -2030,23 +3481,107 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
       );
 
       if (response['success'] == true) {
+        // Update local state immediately for instant feedback
+        final newNote = response['data']?['note'] ?? response['data'];
+        if (newNote != null && _complaint != null) {
+          setState(() {
+            final notes = List<Map<String, dynamic>>.from(
+              _complaint!['internalNotes'] ?? [],
+            );
+            
+            // Create note object with current user if available
+            final noteData = newNote is Map
+                ? Map<String, dynamic>.from(newNote)
+                : <String, dynamic>{
+                    'note': note,
+                    'addedAt': DateTime.now().toIso8601String(),
+                    'addedBy': currentUser ?? {'fullName': 'Admin'},
+                  };
+            
+            notes.insert(0, noteData);
+            _complaint!['internalNotes'] = notes;
+          });
+        }
+        
         _internalNoteController.clear();
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Internal note added'),
-              backgroundColor: AppColors.success,
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.note_add, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Internal note added successfully!',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFF59E0B), // Soft orange
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           );
-          await _loadComplaintDetails();
+          
+          // Scroll to show new note
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients) {
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+          
+          // No reload - instant update only
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(response['message'] ?? 'Failed to add note'),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFEF4444),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: AppColors.error,
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Error: ${e.toString().length > 50 ? e.toString().substring(0, 50) + "..." : e.toString()}'),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
@@ -2111,6 +3646,32 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
       return dateTime is String ? DateTime.parse(dateTime) : dateTime as DateTime;
     } catch (e) {
       return DateTime.now();
+    }
+  }
+
+  Color _getRoleBadgeColor(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return const Color(0xFF8B5CF6); // Purple
+      case 'staff':
+        return const Color(0xFF3B82F6); // Blue
+      case 'resident':
+        return const Color(0xFF10B981); // Green
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+
+  String _getRoleBadgeLabel(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return 'ADMIN';
+      case 'staff':
+        return 'STAFF';
+      case 'resident':
+        return 'RESIDENT';
+      default:
+        return role.toUpperCase();
     }
   }
 }

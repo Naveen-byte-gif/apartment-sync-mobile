@@ -1,5 +1,4 @@
 import 'package:intl/intl.dart';
-import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import '../../../core/imports/app_imports.dart';
 import '../../../data/models/chat_data.dart';
 import '../../../data/models/user_data.dart';
@@ -10,7 +9,14 @@ import 'p2p_chat_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class P2PChatListScreen extends StatefulWidget {
-  const P2PChatListScreen({super.key});
+  final String? buildingCode;
+  final bool isAdmin;
+
+  const P2PChatListScreen({
+    super.key,
+    this.buildingCode,
+    this.isAdmin = false,
+  });
 
   @override
   State<P2PChatListScreen> createState() => _P2PChatListScreenState();
@@ -45,26 +51,36 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
     }
   }
 
-  Future<void> _loadChats() async {
+  Future<void> _loadChats({bool showLoading = false}) async {
+    if (showLoading && _chats.isEmpty) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+    
     try {
-      final chats = await ChatService.getP2PChats();
+      final chats = await ChatService.getP2PChats(
+        buildingCode: widget.buildingCode,
+        isAdmin: widget.isAdmin,
+      );
       setState(() {
         _chats = chats;
-        if (_chats.isNotEmpty) {
-          _isLoading = false;
-        }
+        _isLoading = false;
       });
     } catch (e) {
-      print('Error loading chats: $e');
-      if (_chatableUsers.isEmpty) {
-        setState(() => _isLoading = false);
-      }
+      print('❌ [FLUTTER] Error loading chats: $e');
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
   Future<void> _loadChatableUsers() async {
     try {
-      final users = await ChatService.getChatableUsers();
+      final users = await ChatService.getChatableUsers(
+        buildingCode: widget.buildingCode,
+        isAdmin: widget.isAdmin,
+      );
       setState(() {
         _chatableUsers = users;
         _isLoading = false;
@@ -80,12 +96,24 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
   void _setupSocketListeners() {
     final socketService = SocketService();
     
+    // Listen for new P2P messages to update unread counts in real-time
     socketService.on('p2p_message_received', (data) {
-      _loadChats();
+      if (mounted) {
+        // Only refresh if we're on the chats tab (index 0)
+        if (_selectedTab == 0) {
+          _loadChats(); // Refresh to update unread counts
+        }
+      }
     });
 
+    // Listen for sent messages to update last message
     socketService.on('p2p_message_sent', (data) {
-      _loadChats();
+      if (mounted) {
+        // Only refresh if we're on the chats tab (index 0)
+        if (_selectedTab == 0) {
+          _loadChats(); // Refresh to update last message and unread counts
+        }
+      }
     });
   }
 
@@ -137,7 +165,17 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: _buildTabButton(0, 'My Chats', _chats.length),
+                  child: _buildTabButton(
+                    0,
+                    'My Chats',
+                    _chats.fold<int>(
+                      0,
+                      (sum, chat) {
+                        final count = chat.getUnreadCount(_currentUserId?.toString().trim() ?? '');
+                        return sum + (count > 0 ? count : 0);
+                      },
+                    ),
+                  ),
                 ),
                 Expanded(
                   child: _buildTabButton(1, 'Contacts', _chatableUsers.length),
@@ -185,6 +223,8 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
 
   Widget _buildTabButton(int index, String label, int count) {
     final isSelected = _selectedTab == index;
+    final isUnreadCount = index == 0; // Only show unread badge for "My Chats"
+    
     return InkWell(
       onTap: () {
         setState(() {
@@ -197,8 +237,8 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: isSelected ? Colors.orange : Colors.transparent,
-              width: 2,
+              color: isSelected ? AppColors.primary : Colors.transparent,
+              width: 3,
             ),
           ),
         ),
@@ -208,25 +248,36 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
             Text(
               label,
               style: TextStyle(
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? Colors.orange : Colors.grey,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? AppColors.primary : Colors.grey[600],
                 fontSize: 16,
               ),
             ),
             if (count > 0) ...[
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.orange : Colors.grey,
-                  borderRadius: BorderRadius.circular(10),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isUnreadCount ? 8 : 6,
+                  vertical: isUnreadCount ? 4 : 2,
                 ),
-                child: Text(
-                  '$count',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+                decoration: BoxDecoration(
+                  color: isUnreadCount ? AppColors.primary : Colors.grey[400],
+                  borderRadius: BorderRadius.circular(isUnreadCount ? 12 : 10),
+                ),
+                constraints: isUnreadCount
+                    ? const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      )
+                    : null,
+                child: Center(
+                  child: Text(
+                    isUnreadCount && count > 99 ? '99+' : '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -249,12 +300,21 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
       );
     }
 
+    // Sort chats by last message time (most recent first)
+    final sortedChats = List<P2PChat>.from(_chats);
+    sortedChats.sort((a, b) {
+      final aTime = a.lastMessage?.sentAt ?? a.updatedAt;
+      final bTime = b.lastMessage?.sentAt ?? b.updatedAt;
+      return bTime.compareTo(aTime);
+    });
+
     return RefreshIndicator(
       onRefresh: _loadChats,
       child: ListView.builder(
-        itemCount: _chats.length,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: sortedChats.length,
         itemBuilder: (context, index) {
-          final chat = _chats[index];
+          final chat = sortedChats[index];
           final otherParticipant = chat.participants
               .firstWhere((p) => p.userId != _currentUserId,
                   orElse: () => chat.participants.first);
@@ -267,103 +327,16 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
             }
           }
 
-          final unreadCount = chat.getUnreadCount(_currentUserId ?? '');
+          // Get unread count for current user
+          // Ensure we use the correct userId format - normalize to handle ObjectId strings
+          final currentUserIdString = _currentUserId?.toString().trim() ?? '';
+          final unreadCount = chat.getUnreadCount(currentUserIdString);
           final lastMessage = chat.lastMessage;
+          // Ensure unread count is always non-negative and valid
+          final displayUnreadCount = unreadCount < 0 ? 0 : unreadCount;
+          final hasUnread = displayUnreadCount > 0;
 
-          return ListTile(
-            leading: Stack(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: _getAvatarColor(otherParticipant.fullName ?? ''),
-                  backgroundImage: otherParticipant.profilePicture != null
-                      ? CachedNetworkImageProvider(otherParticipant.profilePicture!)
-                      : null,
-                  child: otherParticipant.profilePicture == null
-                      ? Text(
-                          _getInitials(otherParticipant.fullName ?? 'Unknown'),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      : null,
-                ),
-                // Online status would be shown here if available
-              ],
-            ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    otherParticipant.fullName ?? 'Unknown',
-                    style: TextStyle(
-                      fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                if (otherParticipant.role == 'admin' || otherParticipant.role == 'staff')
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _getRoleColor(otherParticipant.role),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _getRoleLabel(otherParticipant.role),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                Text(
-                  lastMessage?.message ?? 'No messages yet',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                    fontWeight: unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
-                  ),
-                ),
-                if (lastMessage != null)
-                  Text(
-                    DateFormat('h:mm a').format(lastMessage.sentAt),
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                      fontSize: 12,
-                    ),
-                  ),
-              ],
-            ),
-            trailing: unreadCount > 0
-                ? Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Colors.orange,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '$unreadCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  )
-                : null,
+          return InkWell(
             onTap: () {
               Navigator.push(
                 context,
@@ -379,10 +352,226 @@ class _P2PChatListScreenState extends State<P2PChatListScreen> {
                 ),
               ).then((_) => _loadChats());
             },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: hasUnread ? Colors.orange[50]?.withOpacity(0.3) : Colors.white,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Colors.grey[200]!,
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Avatar with unread indicator
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: _getAvatarColor(otherParticipant.fullName ?? ''),
+                        backgroundImage: otherParticipant.profilePicture != null
+                            ? CachedNetworkImageProvider(otherParticipant.profilePicture!)
+                            : null,
+                        child: otherParticipant.profilePicture == null
+                            ? Text(
+                                _getInitials(otherParticipant.fullName ?? 'Unknown'),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      ),
+                      if (hasUnread)
+                        Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: displayUnreadCount > 9 ? 6 : 5,
+                              vertical: 3,
+                            ),
+                            constraints: BoxConstraints(
+                              minWidth: displayUnreadCount > 99 ? 28 : (displayUnreadCount > 9 ? 22 : 20),
+                              minHeight: 20,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              shape: displayUnreadCount > 99 
+                                  ? BoxShape.rectangle 
+                                  : BoxShape.circle,
+                              borderRadius: displayUnreadCount > 99 
+                                  ? BorderRadius.circular(12) 
+                                  : null,
+                              border: Border.all(color: Colors.white, width: 2.5),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withOpacity(0.4),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Text(
+                                displayUnreadCount > 99 ? '99+' : '$displayUnreadCount',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: displayUnreadCount > 99 ? 9 : (displayUnreadCount > 9 ? 10 : 11),
+                                  fontWeight: FontWeight.bold,
+                                  height: 1.0,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 16),
+                  // Name and message preview
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                otherParticipant.fullName ?? 'Unknown',
+                                style: TextStyle(
+                                  fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w600,
+                                  fontSize: 16,
+                                  color: hasUnread ? Colors.black87 : Colors.black87,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (otherParticipant.role == 'admin' || otherParticipant.role == 'staff')
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _getRoleColor(otherParticipant.role),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  _getRoleLabel(otherParticipant.role),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 8),
+                            // Time
+                            if (lastMessage != null)
+                              Text(
+                                _formatTime(lastMessage.sentAt),
+                                style: TextStyle(
+                                  color: hasUnread ? AppColors.primary : Colors.grey[600],
+                                  fontSize: 12,
+                                  fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _getLastMessagePreview(lastMessage),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: hasUnread ? Colors.black87 : Colors.grey[600],
+                                  fontSize: 14,
+                                  fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Trailing unread count badge (for better visibility)
+                  if (hasUnread) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: displayUnreadCount > 9 ? 8 : 6,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withOpacity(0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      constraints: BoxConstraints(
+                        minWidth: displayUnreadCount > 99 ? 32 : (displayUnreadCount > 9 ? 28 : 24),
+                        minHeight: 24,
+                      ),
+                      child: Center(
+                        child: Text(
+                          displayUnreadCount > 99 ? '99+' : '$displayUnreadCount',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: displayUnreadCount > 99 ? 11 : 12,
+                            fontWeight: FontWeight.bold,
+                            height: 1.0,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           );
         },
       ),
     );
+  }
+
+  String _formatTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final messageDate = DateTime(dateTime.year, dateTime.month, dateTime.day);
+    
+    if (messageDate == today) {
+      return DateFormat('h:mm a').format(dateTime);
+    } else if (messageDate == today.subtract(const Duration(days: 1))) {
+      return 'Yesterday';
+    } else if (now.difference(messageDate).inDays < 7) {
+      return DateFormat('EEEE').format(dateTime);
+    } else {
+      return DateFormat('MMM d').format(dateTime);
+    }
+  }
+
+  String _getLastMessagePreview(P2PMessage? message) {
+    if (message == null) return 'No messages yet';
+    if (message.messageType == 'image') {
+      return '📷 Image';
+    } else if (message.message.isNotEmpty) {
+      return message.message;
+    }
+    return 'Media';
   }
 
   Widget _buildContactsList() {

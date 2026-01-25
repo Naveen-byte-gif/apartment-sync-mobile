@@ -3,6 +3,7 @@ import '../../../data/models/user_data.dart';
 import 'dart:convert';
 import '../auth/role_selection_screen.dart';
 import 'edit_profile_screen.dart';
+import 'change_password_screen.dart';
 
 class StaffProfileScreen extends StatefulWidget {
   const StaffProfileScreen({super.key});
@@ -275,6 +276,19 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
                       ),
                     ],
                   ),
+                if (_user?.emergencyContact != null && _user!.emergencyContact!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.emergency_outlined, size: 16, color: AppColors.error),
+                      const SizedBox(width: 4),
+                      Text(
+                        _user!.emergencyContact!,
+                        style: const TextStyle(fontSize: 12, color: AppColors.error),
+                      ),
+                    ],
+                  ),
+                ],
                 if (_user?.apartmentCode != null) ...[
                   const SizedBox(height: 4),
                   Row(
@@ -371,11 +385,15 @@ class _StaffProfileScreenState extends State<StaffProfileScreen> {
           },
         ),
         _MenuItem(
-          icon: Icons.lock,
+          icon: Icons.lock_outline,
           title: 'Change Password',
           onTap: () {
-            print('🖱️ [FLUTTER] Change password tapped');
-            // TODO: Navigate to change password screen
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ChangePasswordScreen(),
+              ),
+            );
           },
         ),
       ],

@@ -12,6 +12,7 @@ class UserData {
   final int? floorNumber;
   final String? flatType;
   final String? profilePicture;
+  final String? emergencyContact;
   final DateTime? registeredAt;
   final DateTime? lastUpdatedAt;
   final bool? isOnline;
@@ -31,6 +32,7 @@ class UserData {
     this.floorNumber,
     this.flatType,
     this.profilePicture,
+    this.emergencyContact,
     this.registeredAt,
     this.lastUpdatedAt,
     this.isOnline,
@@ -74,6 +76,7 @@ class UserData {
       floorNumber: floorNum,
       flatType: json['flatType']?.toString(),
       profilePicture: profilePic,
+      emergencyContact: json['emergencyContact']?.toString(),
       registeredAt: json['registeredAt'] != null 
           ? DateTime.tryParse(json['registeredAt'].toString())
           : null,

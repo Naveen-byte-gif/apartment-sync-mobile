@@ -19,7 +19,7 @@ class _NewsTabScreenState extends State<NewsTabScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final news = context.read<NewsProvider>();
       news.loadAll();
@@ -43,16 +43,6 @@ class _NewsTabScreenState extends State<NewsTabScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  Consumer<NewsProvider>(
-                    builder: (context, news, _) {
-                      return NewsListView(
-                        articles: news.healthNews,
-                        isLoading: news.isLoading,
-                        onRefresh: news.loadAll,
-                        category: 'Health',
-                      );
-                    },
-                  ),
                   Consumer<NewsProvider>(
                     builder: (context, news, _) {
                       return NewsListView(

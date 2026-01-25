@@ -20,12 +20,37 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
   String _selectedFilter =
       'all'; // all, pending, checked-in, checked-out, overdue
   String _searchQuery = '';
+  String? _userRole;
+  String? _selectedBuildingCode;
 
   @override
   void initState() {
     super.initState();
+    _loadUserRole();
+    _loadSelectedBuilding();
     _loadVisitors();
     _setupSocketListeners();
+  }
+
+  void _loadUserRole() {
+    try {
+      final userJson = StorageService.getString(AppConstants.userKey);
+      if (userJson != null) {
+        final userData = jsonDecode(userJson);
+        setState(() {
+          _userRole = userData['role'];
+        });
+      }
+    } catch (e) {
+      print('Error loading user role: $e');
+    }
+  }
+
+  void _loadSelectedBuilding() {
+    final savedCode = StorageService.getString(AppConstants.selectedBuildingKey);
+    setState(() {
+      _selectedBuildingCode = savedCode;
+    });
   }
 
   void _setupSocketListeners() {
@@ -61,7 +86,17 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
   Future<void> _loadVisitors() async {
     setState(() => _isLoading = true);
     try {
-      final response = await ApiService.get(ApiConstants.visitors);
+      String visitorsUrl = ApiConstants.visitors;
+      
+      // For staff, use staff visitors endpoint with building filter
+      if (_userRole == AppConstants.roleStaff) {
+        visitorsUrl = ApiConstants.staffVisitors;
+        if (_selectedBuildingCode != null) {
+          visitorsUrl = '$visitorsUrl?buildingCode=$_selectedBuildingCode';
+        }
+      }
+      
+      final response = await ApiService.get(visitorsUrl);
       if (response['success'] == true) {
         setState(() {
           _visitors = List<Map<String, dynamic>>.from(
@@ -292,21 +327,27 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
         title: Text(
           visitor['visitorName'] ?? 'Unknown',
           style: const TextStyle(fontWeight: FontWeight.bold),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             // Show Status
             Row(
               children: [
                 Icon(_getStatusIcon(status), size: 16, color: statusColor),
                 const SizedBox(width: 4),
-                Text(
-                  'Status: $status',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
+                Expanded(
+                  child: Text(
+                    'Status: $status',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: statusColor,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -318,9 +359,12 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
                 children: [
                   const Icon(Icons.login, size: 14, color: Colors.blue),
                   const SizedBox(width: 4),
-                  Text(
-                    'Login: ${_formatDateTime(visitor['checkInTime'])}',
-                    style: const TextStyle(fontSize: 12, color: Colors.blue),
+                  Expanded(
+                    child: Text(
+                      'Login: ${_formatDateTime(visitor['checkInTime'])}',
+                      style: const TextStyle(fontSize: 12, color: Colors.blue),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
@@ -331,9 +375,12 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
                 children: [
                   const Icon(Icons.access_time, size: 14, color: Colors.green),
                   const SizedBox(width: 4),
-                  Text(
-                    'Exact: ${_formatDateTime(visitor['exactTime'])}',
-                    style: const TextStyle(fontSize: 12, color: Colors.green),
+                  Expanded(
+                    child: Text(
+                      'Exact: ${_formatDateTime(visitor['exactTime'])}',
+                      style: const TextStyle(fontSize: 12, color: Colors.green),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               )
@@ -342,34 +389,50 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
                 children: [
                   const Icon(Icons.access_time, size: 14, color: Colors.grey),
                   const SizedBox(width: 4),
-                  const Text(
-                    'Exact: Not set',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  const Expanded(
+                    child: Text(
+                      'Exact: Not set',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
           ],
         ),
-        trailing: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildStatusActions(visitor, status, isCheckedIn, statusColor),
-            const SizedBox(height: 4),
-            // Exact Time Button
-            if (visitor['exactTime'] == null)
-              ElevatedButton(
-                onPressed: () => _showExactTimeDialog(visitor['_id']),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+        trailing: SizedBox(
+          width: 100,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _buildStatusActions(visitor, status, isCheckedIn, statusColor),
+              const SizedBox(height: 4),
+              // Exact Time Button
+              if (visitor['exactTime'] == null)
+                SizedBox(
+                  width: 70,
+                  height: 30,
+                  child: ElevatedButton(
+                    onPressed: () => _showExactTimeDialog(visitor['_id']),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      minimumSize: const Size(60, 30),
+                    ),
+                    child: const Text(
+                      'Exact',
+                      style: TextStyle(fontSize: 10),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  minimumSize: const Size(60, 30),
                 ),
-                child: const Text('Exact', style: TextStyle(fontSize: 10)),
-              ),
-          ],
+            ],
+          ),
         ),
         onTap: () {
           Navigator.push(
@@ -406,28 +469,72 @@ class _VisitorManagementScreenState extends State<VisitorManagementScreen> {
     Color statusColor,
   ) {
     if (isCheckedIn) {
-      return ElevatedButton(
-        onPressed: () => _checkOutVisitor(visitor['_id']),
-        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-        child: const Text('Check Out'),
+      return SizedBox(
+        width: 90,
+        height: 32,
+        child: ElevatedButton(
+          onPressed: () => _checkOutVisitor(visitor['_id']),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            minimumSize: const Size(80, 30),
+          ),
+          child: const Text(
+            'Check Out',
+            style: TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       );
     } else if (status == 'Pending') {
       // Show Check In button for Pending (removed Approve/Reject)
-      return ElevatedButton(
-        onPressed: () => _checkInVisitor(visitor['_id']),
-        style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-        child: const Text('Check In'),
+      return SizedBox(
+        width: 90,
+        height: 32,
+        child: ElevatedButton(
+          onPressed: () => _checkInVisitor(visitor['_id']),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            minimumSize: const Size(80, 30),
+          ),
+          child: const Text(
+            'Check In',
+            style: TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       );
     } else if (status == 'Pre-Approved') {
-      return ElevatedButton(
-        onPressed: () => _checkInVisitor(visitor['_id']),
-        style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-        child: const Text('Check In'),
+      return SizedBox(
+        width: 90,
+        height: 32,
+        child: ElevatedButton(
+          onPressed: () => _checkInVisitor(visitor['_id']),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            minimumSize: const Size(80, 30),
+          ),
+          child: const Text(
+            'Check In',
+            style: TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       );
     } else {
-      return Chip(
-        label: Text(status),
-        backgroundColor: statusColor.withOpacity(0.2),
+      return SizedBox(
+        width: 90,
+        child: Chip(
+          label: Text(
+            status,
+            style: const TextStyle(fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+          backgroundColor: statusColor.withOpacity(0.2),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+        ),
       );
     }
   }

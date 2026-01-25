@@ -23,16 +23,14 @@ class _CreateStaffScreenState extends State<CreateStaffScreen> {
   bool _isLoadingBuildings = true;
 
   List<Map<String, dynamic>> _allBuildings = [];
-  Set<String> _selectedBuildings = {}; // Set of building codes
+  List<String> _selectedBuildings = []; // List to preserve order (first is primary)
 
-  // Permission toggles
-  bool _canCreateBuildings = false;
-  bool _canEditBuildingDetails = false;
-  bool _canChangeFlatStatus = false;
-  bool _canAddRemoveResidents = false;
-  bool _canLogVisitorEntry = false;
-  bool _canViewVisitorHistory = false;
-  bool _fullAccess = false;
+  // Permission toggles (matching backend Staff model)
+  bool _canManageVisitors = false;
+  bool _canManageComplaints = false;
+  bool _canManageMaintenance = false;
+  bool _canAccessReports = false;
+  bool _canManageAccess = false;
 
   final List<String> _staffRoles = ['Security', 'Manager', 'Maintenance', 'Admin Staff'];
   final List<String> _statusOptions = ['active', 'inactive', 'suspended'];
@@ -88,37 +86,40 @@ class _CreateStaffScreenState extends State<CreateStaffScreen> {
       _selectedStaffRole = role;
       // Auto-set permissions based on role
       if (role == 'Admin Staff') {
-        _fullAccess = true;
-        _canCreateBuildings = true;
-        _canEditBuildingDetails = true;
-        _canChangeFlatStatus = true;
-        _canAddRemoveResidents = true;
-        _canLogVisitorEntry = true;
-        _canViewVisitorHistory = true;
+        // Full access - can manage everything
+        _canManageVisitors = true;
+        _canManageComplaints = true;
+        _canManageMaintenance = true;
+        _canAccessReports = true;
+        _canManageAccess = true;
       } else if (role == 'Security') {
-        _canLogVisitorEntry = true;
-        _canViewVisitorHistory = true;
-        _fullAccess = false;
-        _canCreateBuildings = false;
-        _canEditBuildingDetails = false;
-        _canChangeFlatStatus = false;
-        _canAddRemoveResidents = false;
+        // Security can manage visitors
+        _canManageVisitors = true;
+        _canManageComplaints = false;
+        _canManageMaintenance = false;
+        _canAccessReports = false;
+        _canManageAccess = false;
       } else if (role == 'Manager') {
-        _canChangeFlatStatus = true;
-        _canViewVisitorHistory = true;
-        _canLogVisitorEntry = true;
-        _fullAccess = false;
-        _canCreateBuildings = false;
-        _canEditBuildingDetails = false;
-        _canAddRemoveResidents = false;
+        // Manager can manage complaints, visitors, and access
+        _canManageVisitors = true;
+        _canManageComplaints = true;
+        _canManageMaintenance = false;
+        _canAccessReports = true;
+        _canManageAccess = true;
       } else if (role == 'Maintenance') {
-        _canChangeFlatStatus = false; // Maintenance staff typically don't change flat status
-        _canViewVisitorHistory = false;
-        _canLogVisitorEntry = false;
-        _fullAccess = false;
-        _canCreateBuildings = false;
-        _canEditBuildingDetails = false;
-        _canAddRemoveResidents = false;
+        // Maintenance can manage complaints and maintenance
+        _canManageVisitors = false;
+        _canManageComplaints = true;
+        _canManageMaintenance = true;
+        _canAccessReports = false;
+        _canManageAccess = false;
+      } else {
+        // Default: no permissions
+        _canManageVisitors = false;
+        _canManageComplaints = false;
+        _canManageMaintenance = false;
+        _canAccessReports = false;
+        _canManageAccess = false;
       }
     });
   }
@@ -151,77 +152,169 @@ class _CreateStaffScreenState extends State<CreateStaffScreen> {
         'status': _selectedStatus,
         'autoGeneratePassword': _autoGeneratePassword,
         'permissions': {
-          'canCreateBuildings': _canCreateBuildings,
-          'canEditBuildingDetails': _canEditBuildingDetails,
-          'canChangeFlatStatus': _canChangeFlatStatus,
-          'canManageResidents': _canAddRemoveResidents,
-          'canLogVisitorEntry': _canLogVisitorEntry,
-          'canViewVisitorHistory': _canViewVisitorHistory,
-          'fullAccess': _fullAccess,
+          'canManageVisitors': _canManageVisitors,
+          'canManageComplaints': _canManageComplaints,
+          'canManageMaintenance': _canManageMaintenance,
+          'canAccessReports': _canAccessReports,
+          'canManageAccess': _canManageAccess,
         },
       };
 
-      final response = await ApiService.post('/admin/staff', staffData);
+      // Use the proper staff creation endpoint
+      // First create user with staff role, then onboard as staff
+      // Backend requires buildingCode, so use first selected building (primary)
+      final primaryBuildingCode = _selectedBuildings.isNotEmpty 
+          ? _selectedBuildings.first 
+          : null;
+      
+      if (primaryBuildingCode == null) {
+        throw Exception('Please select at least one building');
+      }
+
+      final userData = {
+        'fullName': _fullNameController.text.trim(),
+        'phoneNumber': _phoneNumberController.text.trim(),
+        'email': _emailController.text.trim(),
+        'password': password,
+        'role': 'staff',
+        'buildingCode': primaryBuildingCode, // Use primary building for user creation
+      };
+
+      // Create user first (staff role doesn't require apartmentCode)
+      final userResponse = await ApiService.post(
+        ApiConstants.adminUsers,
+        userData,
+      );
+
+      if (userResponse['success'] != true) {
+        throw Exception(userResponse['message'] ?? 'Failed to create user');
+      }
+
+      final userId = userResponse['data']?['user']?['id'] ?? 
+                     userResponse['data']?['user']?['_id'] ??
+                     userResponse['data']?['id'];
+
+      if (userId == null) {
+        throw Exception('User created but ID not returned');
+      }
+
+      // Prepare building assignment data (first in list is primary)
+      final buildingAssignments = _selectedBuildings.asMap().entries.map((entry) {
+        final index = entry.key;
+        final code = entry.value;
+        final building = _allBuildings.firstWhere(
+          (b) => b['code'] == code,
+          orElse: () => {'name': code},
+        );
+        return {
+          'buildingCode': code,
+          'buildingName': building['name'] ?? code,
+          'isPrimary': index == 0, // First selected is primary
+        };
+      }).toList();
+
+      // Onboard staff with permissions
+      final onboardingData = {
+        'userId': userId,
+        'employeeId': 'EMP${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+        'specialization': [],
+        'assignedBuildings': buildingAssignments,
+        'permissions': {
+          'canManageVisitors': _canManageVisitors,
+          'canManageComplaints': _canManageComplaints,
+          'canManageMaintenance': _canManageMaintenance,
+          'canAccessReports': _canAccessReports,
+          'canManageAccess': _canManageAccess,
+        },
+        'availability': {
+          'currentStatus': 'Available',
+        },
+      };
+
+      final response = await ApiService.post(
+        ApiConstants.adminStaffOnboard,
+        onboardingData,
+      );
 
       if (mounted) {
-        final statusCode = response['_statusCode'] as int?;
-        AppMessageHandler.handleResponse(
-          context,
-          response,
-          statusCode: statusCode,
-          showDialog: true,
-          onSuccess: () {
-            // Show password if auto-generated
-            if (_autoGeneratePassword && response['data']?['password'] != null) {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Staff Created Successfully'),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Staff account has been created.'),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Generated Password:',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+        if (response['success'] == true) {
+          // Show password if auto-generated
+          if (_autoGeneratePassword) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Staff Created Successfully'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Staff account has been created and onboarded successfully.'),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Generated Password:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.primary),
                       ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(8),
+                      child: SelectableText(
+                        _generatedPassword ?? password,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
                         ),
-                        child: SelectableText(
-                          response['data']['password'],
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, 
+                            color: AppColors.warning, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Please share this password with the staff member securely.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.warning,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Please share this password with the staff member securely.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('OK'),
                     ),
                   ],
                 ),
-              ).then((_) => Navigator.pop(context, true));
-            } else {
-              Navigator.pop(context, true);
-            }
-          },
-        );
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            ).then((_) => Navigator.pop(context, true));
+          } else {
+            AppMessageHandler.showSuccess(
+              context,
+              'Staff created and onboarded successfully',
+            );
+            Navigator.pop(context, true);
+          }
+        } else {
+          AppMessageHandler.handleResponse(context, response);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -446,7 +539,7 @@ class _CreateStaffScreenState extends State<CreateStaffScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Select buildings this staff can access',
+                'Select buildings this staff can access. First selected building will be primary.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -456,19 +549,30 @@ class _CreateStaffScreenState extends State<CreateStaffScreen> {
                 const Center(child: CircularProgressIndicator())
               else if (_allBuildings.isEmpty)
                 Card(
+                  color: AppColors.warning.withOpacity(0.1),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
-                        const Icon(Icons.apartment_outlined, size: 48, color: Colors.grey),
+                        Icon(Icons.apartment_outlined, size: 48, color: AppColors.warning),
                         const SizedBox(height: 8),
-                        const Text('No buildings found'),
+                        const Text(
+                          'No buildings found',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                         const SizedBox(height: 8),
-                        TextButton(
+                        const Text(
+                          'You need to create at least one building before creating staff.',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
                           onPressed: () {
-                            Navigator.pushNamed(context, '/create-building');
+                            Navigator.pop(context);
+                            // Navigate to create building - adjust route as needed
                           },
-                          child: const Text('Create Building First'),
+                          icon: const Icon(Icons.add_business),
+                          label: const Text('Create Building First'),
                         ),
                       ],
                     ),
@@ -477,24 +581,60 @@ class _CreateStaffScreenState extends State<CreateStaffScreen> {
               else
                 Card(
                   child: Column(
-                    children: _allBuildings.map((building) {
+                    children: _allBuildings.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final building = entry.value;
                       final code = building['code'] as String? ?? '';
                       final name = building['name'] as String? ?? code;
                       final isSelected = _selectedBuildings.contains(code);
+                      final isPrimary = isSelected && _selectedBuildings.isNotEmpty && _selectedBuildings.first == code;
                       
                       return CheckboxListTile(
-                        title: Text(name),
+                        title: Row(
+                          children: [
+                            Expanded(child: Text(name)),
+                            if (isPrimary)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.star, size: 14, color: AppColors.primary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Primary',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                         subtitle: Text('Code: $code'),
                         value: isSelected,
                         onChanged: (value) {
                           setState(() {
                             if (value == true) {
-                              _selectedBuildings.add(code);
+                              // Add to list (preserves order - first is primary)
+                              if (!_selectedBuildings.contains(code)) {
+                                _selectedBuildings.add(code);
+                              }
                             } else {
                               _selectedBuildings.remove(code);
                             }
                           });
                         },
+                        secondary: isPrimary
+                            ? Icon(Icons.star, color: AppColors.primary)
+                            : null,
                       );
                     }).toList(),
                   ),
@@ -502,14 +642,14 @@ class _CreateStaffScreenState extends State<CreateStaffScreen> {
               const SizedBox(height: 24),
               // Permissions Section
               Text(
-                'Permissions & Authority',
+                'Permissions & Access Control',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                'Control what this staff can access',
+                'Control what this staff can access based on assigned buildings',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -519,65 +659,47 @@ class _CreateStaffScreenState extends State<CreateStaffScreen> {
                 child: Column(
                   children: [
                     SwitchListTile(
-                      title: const Text('Full Access (Admin Staff)'),
-                      subtitle: const Text('Grants all permissions'),
-                      value: _fullAccess,
+                      title: const Text('Manage Visitors'),
+                      subtitle: const Text('Can check-in/out visitors and view visitor logs'),
+                      value: _canManageVisitors,
                       onChanged: (value) {
-                        setState(() {
-                          _fullAccess = value;
-                          if (value) {
-                            // Enable all permissions
-                            _canCreateBuildings = true;
-                            _canEditBuildingDetails = true;
-                            _canChangeFlatStatus = true;
-                            _canAddRemoveResidents = true;
-                            _canLogVisitorEntry = true;
-                            _canViewVisitorHistory = true;
-                          }
-                        });
+                        setState(() => _canManageVisitors = value);
                       },
                     ),
                     const Divider(),
                     SwitchListTile(
-                      title: const Text('Can Create Building'),
-                      value: _canCreateBuildings,
-                      onChanged: _fullAccess ? null : (value) {
-                        setState(() => _canCreateBuildings = value);
+                      title: const Text('Manage Complaints'),
+                      subtitle: const Text('Can view, assign, and update complaint status'),
+                      value: _canManageComplaints,
+                      onChanged: (value) {
+                        setState(() => _canManageComplaints = value);
                       },
                     ),
+                    const Divider(),
                     SwitchListTile(
-                      title: const Text('Can Edit Building Details'),
-                      value: _canEditBuildingDetails,
-                      onChanged: _fullAccess ? null : (value) {
-                        setState(() => _canEditBuildingDetails = value);
+                      title: const Text('Manage Maintenance'),
+                      subtitle: const Text('Can manage maintenance tasks and schedules'),
+                      value: _canManageMaintenance,
+                      onChanged: (value) {
+                        setState(() => _canManageMaintenance = value);
                       },
                     ),
+                    const Divider(),
                     SwitchListTile(
-                      title: const Text('Can Change Flat Status'),
-                      value: _canChangeFlatStatus,
-                      onChanged: _fullAccess ? null : (value) {
-                        setState(() => _canChangeFlatStatus = value);
+                      title: const Text('Access Reports'),
+                      subtitle: const Text('Can view analytics and reports'),
+                      value: _canAccessReports,
+                      onChanged: (value) {
+                        setState(() => _canAccessReports = value);
                       },
                     ),
+                    const Divider(),
                     SwitchListTile(
-                      title: const Text('Can Add / Remove Residents'),
-                      value: _canAddRemoveResidents,
-                      onChanged: _fullAccess ? null : (value) {
-                        setState(() => _canAddRemoveResidents = value);
-                      },
-                    ),
-                    SwitchListTile(
-                      title: const Text('Can Log Visitor Entry'),
-                      value: _canLogVisitorEntry,
-                      onChanged: _fullAccess ? null : (value) {
-                        setState(() => _canLogVisitorEntry = value);
-                      },
-                    ),
-                    SwitchListTile(
-                      title: const Text('Can View Visitor History'),
-                      value: _canViewVisitorHistory,
-                      onChanged: _fullAccess ? null : (value) {
-                        setState(() => _canViewVisitorHistory = value);
+                      title: const Text('Manage Users/Residents'),
+                      subtitle: const Text('Can create and manage residents for assigned buildings'),
+                      value: _canManageAccess,
+                      onChanged: (value) {
+                        setState(() => _canManageAccess = value);
                       },
                     ),
                   ],

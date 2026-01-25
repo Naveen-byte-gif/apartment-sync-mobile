@@ -18,7 +18,7 @@ class _NewsHomeScreenState extends State<NewsHomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final news = context.read<NewsProvider>();
       news.loadAll();
@@ -47,7 +47,6 @@ class _NewsHomeScreenState extends State<NewsHomeScreen>
           tabs: const [
             Tab(text: 'All'),
             Tab(text: 'News'),
-            Tab(text: 'Health'),
             Tab(text: 'Sports'),
             Tab(text: 'Cricket'),
           ],
@@ -60,7 +59,6 @@ class _NewsHomeScreenState extends State<NewsHomeScreen>
             children: [
               _buildAllTab(news),
               _buildNewsTab(news),
-              _buildHealthTab(news),
               _buildSportsTab(news),
               _buildCricketTab(news),
             ],
@@ -103,17 +101,6 @@ class _NewsHomeScreenState extends State<NewsHomeScreen>
     return RefreshIndicator(
       onRefresh: news.loadAll,
       child: _NewsListView(articles: news.topNews),
-    );
-  }
-
-  Widget _buildHealthTab(NewsProvider news) {
-    final combined = [...news.healthNews, ...news.whoHealth];
-    if (news.isLoading && combined.isEmpty) {
-      return _buildNewsSkeletonList();
-    }
-    return RefreshIndicator(
-      onRefresh: news.loadAll,
-      child: _NewsListView(articles: combined),
     );
   }
 

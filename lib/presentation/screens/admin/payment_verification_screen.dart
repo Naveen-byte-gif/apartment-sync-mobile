@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../../core/imports/app_imports.dart';
+import '../../../core/constants/app_constants.dart';
+import '../../../core/services/storage_service.dart';
 import '../../../data/models/payment_data.dart';
 
 class PaymentVerificationScreen extends StatefulWidget {
@@ -14,11 +17,23 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen> {
   List<PaymentData> _payments = [];
   bool _isLoading = true;
   String? _selectedStatus;
+  bool _isAdmin = false;
 
   @override
   void initState() {
     super.initState();
+    _loadUserRole();
     _loadPayments();
+  }
+
+  void _loadUserRole() {
+    try {
+      final userJson = StorageService.getString(AppConstants.userKey);
+      if (userJson != null) {
+        final user = jsonDecode(userJson) as Map<String, dynamic>?;
+        _isAdmin = user?['role']?.toString().toLowerCase() == 'admin';
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadPayments() async {
@@ -131,12 +146,51 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Payment Verification'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _isAdmin ? 'Payment Verification' : 'Payments',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            if (!_isAdmin)
+              const Text(
+                'View only · Your building',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.normal,
+                  color: Colors.white70,
+                ),
+              ),
+          ],
+        ),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
+          if (!_isAdmin)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: AppColors.info.withOpacity(0.12),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 20, color: AppColors.info),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'View only. Only Admin can approve or reject payments.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Filter chips
           Container(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
@@ -189,20 +243,40 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : _payments.isEmpty
                 ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.payment,
-                          size: 64,
-                          color: AppColors.textLight,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No payments found',
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.payment,
+                            size: 64,
+                            color: AppColors.textLight,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _isAdmin
+                                ? 'No payments to verify'
+                                : 'No payments in your building',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 16,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          if (!_isAdmin) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Only admins can approve or reject.',
+                              style: TextStyle(
+                                color: AppColors.textLight,
+                                fontSize: 13,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   )
                 : RefreshIndicator(
@@ -213,6 +287,7 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen> {
                       itemBuilder: (context, index) {
                         return _PaymentCard(
                           payment: _payments[index],
+                          canVerify: _isAdmin,
                           onApprove: () =>
                               _verifyPayment(_payments[index].id, 'approve'),
                           onReject: () => _showRejectDialog(_payments[index]),
@@ -266,11 +341,13 @@ class _FilterChip extends StatelessWidget {
 
 class _PaymentCard extends StatelessWidget {
   final PaymentData payment;
+  final bool canVerify;
   final VoidCallback onApprove;
   final VoidCallback onReject;
 
   const _PaymentCard({
     required this.payment,
+    this.canVerify = true,
     required this.onApprove,
     required this.onReject,
   });
@@ -307,7 +384,8 @@ class _PaymentCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "${payment.invoiceNumber}",
+                        payment.invoiceNumber ??
+                            (payment.phoneNumber ?? 'Payment'),
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -376,7 +454,7 @@ class _PaymentCard extends StatelessWidget {
                 ),
               ),
             ],
-            if (payment.status == 'pending_verification') ...[
+            if (canVerify && payment.status == 'pending_verification') ...[
               const SizedBox(height: 16),
               Row(
                 children: [

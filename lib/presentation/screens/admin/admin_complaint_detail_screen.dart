@@ -126,47 +126,34 @@ class _AdminComplaintDetailScreenState extends State<AdminComplaintDetailScreen>
             }
           });
 
-          // Listen for new comments (from other users only - our own comments are added instantly)
-          socketService.on('comment_added', (data) {
-            print('📡 [FLUTTER] Comment added event received: $data');
-            if (mounted && (data['complaintId'] == widget.complaintId ||
-                           data['ticketId'] == widget.complaintId ||
-                           data['complaint']?['id'] == widget.complaintId ||
-                           data['id'] == widget.complaintId)) {
-              // Only update if comment is from another user (not our own)
-              final commentData = data['comment'] ?? data;
-              final postedBy = commentData['postedBy'];
-              final currentUserId = userData['_id'] ?? userData['id'];
-              final commentUserId = postedBy?['_id'] ?? postedBy?['id'];
-              
-              // If comment is from current user, ignore (we already added it instantly)
-              if (currentUserId != null && commentUserId != null && 
-                  currentUserId.toString() == commentUserId.toString()) {
-                print('📡 [FLUTTER] Ignoring own comment from socket (already added instantly)');
-                return;
+          // Listen for new comments (backend emits ticket_comment_added with full comment)
+          void onCommentAdded(dynamic data) {
+            if (!mounted) return;
+            final ticketId = data['ticketId']?.toString();
+            if (ticketId != widget.complaintId) return;
+            final commentData = data['comment'];
+            if (commentData == null || _complaint == null) return;
+            final commentMap = Map<String, dynamic>.from(commentData as Map);
+            final postedBy = commentMap['postedBy'];
+            final currentUserId = userData['_id'] ?? userData['id'];
+            final commentUserId = postedBy is Map ? (postedBy['_id'] ?? postedBy['id'])?.toString() : postedBy?.toString();
+            if (currentUserId != null && commentUserId != null &&
+                currentUserId.toString() == commentUserId.toString()) return;
+            setState(() {
+              final comments = List<Map<String, dynamic>>.from(
+                _complaint!['comments'] ?? [],
+              );
+              final commentId = (commentMap['_id'] ?? commentMap['id'])?.toString();
+              final exists = comments.any((c) =>
+                  (c['_id'] ?? c['id'])?.toString() == commentId);
+              if (!exists) {
+                comments.insert(0, commentMap);
+                _complaint!['comments'] = comments;
               }
-              
-              // Add comment from other users instantly without full reload
-              if (commentData != null && _complaint != null) {
-                setState(() {
-                  final comments = List<Map<String, dynamic>>.from(
-                    _complaint!['comments'] ?? [],
-                  );
-                  
-                  // Check if comment already exists (avoid duplicates)
-                  final commentId = commentData['_id'] ?? commentData['id'];
-                  final exists = comments.any((c) => 
-                    (c['_id'] ?? c['id'])?.toString() == commentId?.toString()
-                  );
-                  
-                  if (!exists) {
-                    comments.insert(0, Map<String, dynamic>.from(commentData));
-                    _complaint!['comments'] = comments;
-                  }
-                });
-              }
-            }
-          });
+            });
+          }
+          socketService.on('comment_added', onCommentAdded);
+          socketService.on('ticket_comment_added', onCommentAdded);
 
           // Listen for media uploads
           socketService.on('media_uploaded', (data) {

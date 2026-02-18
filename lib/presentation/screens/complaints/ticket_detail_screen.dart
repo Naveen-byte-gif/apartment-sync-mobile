@@ -94,8 +94,53 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       });
 
       socketService.on('ticket_comment_added', (data) {
-        print('📡 [FLUTTER] Comment added event: $data');
-        if (data['complaint']?['id'] == widget.ticketId) {
+        final ticketId = data['ticketId']?.toString();
+        if (ticketId != widget.ticketId) return;
+        if (data['comment'] != null && _ticket != null) {
+          try {
+            final commentMap = Map<String, dynamic>.from(data['comment'] as Map);
+            final newComment = Comment.fromJson(commentMap);
+            final existingIds = _ticket!.comments?.map((c) => c.id).toSet() ?? {};
+            if (!existingIds.contains(newComment.id)) {
+              setState(() {
+                _ticket = ComplaintData(
+                  id: _ticket!.id,
+                  ticketNumber: _ticket!.ticketNumber,
+                  title: _ticket!.title,
+                  description: _ticket!.description,
+                  category: _ticket!.category,
+                  subCategory: _ticket!.subCategory,
+                  priority: _ticket!.priority,
+                  status: _ticket!.status,
+                  location: _ticket!.location,
+                  media: _ticket!.media,
+                  createdBy: _ticket!.createdBy,
+                  createdByUser: _ticket!.createdByUser,
+                  createdAt: _ticket!.createdAt,
+                  updatedAt: _ticket!.updatedAt,
+                  assignedTo: _ticket!.assignedTo,
+                  timeline: _ticket!.timeline,
+                  workUpdates: _ticket!.workUpdates,
+                  resolution: _ticket!.resolution,
+                  rating: _ticket!.rating,
+                  comments: [...?_ticket!.comments, newComment],
+                  previouslyClosed: _ticket!.previouslyClosed,
+                  closedAt: _ticket!.closedAt,
+                  reopenedAt: _ticket!.reopenedAt,
+                  reopenedBy: _ticket!.reopenedBy,
+                  cancelledAt: _ticket!.cancelledAt,
+                  cancelledBy: _ticket!.cancelledBy,
+                  cancellationReason: _ticket!.cancellationReason,
+                );
+              });
+              _scrollToBottom();
+            }
+          } catch (e) {
+            print('❌ [FLUTTER] ticket_comment_added parse error: $e');
+            _loadTicketDetails();
+            _scrollToBottom();
+          }
+        } else {
           _loadTicketDetails();
           _scrollToBottom();
         }

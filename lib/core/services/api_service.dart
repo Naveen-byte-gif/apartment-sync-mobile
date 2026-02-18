@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import '../constants/api_constants.dart';
@@ -8,6 +9,9 @@ import '../constants/app_constants.dart';
 
 class ApiService {
   static String? _token;
+
+  /// Request timeout so UI doesn't hang when backend is slow
+  static const Duration requestTimeout = Duration(seconds: 30);
 
   static Future<void> init() async {
     _token = StorageService.getString(AppConstants.tokenKey);
@@ -25,19 +29,27 @@ class ApiService {
 
   static String? get token => _token;
 
+  static void _log(String message, [String? body]) {
+    if (kDebugMode) {
+      if (body != null && body.length > 800) {
+        print('$message (body length: ${body.length})');
+      } else {
+        print(body != null ? '$message $body' : message);
+      }
+    }
+  }
+
   static Future<Map<String, dynamic>> get(String endpoint) async {
     final url = Uri.parse('${ApiConstants.baseUrl}$endpoint');
-    print('📡 [API] GET Request: $url');
-    print('📡 [API] Headers: ${ApiConstants.getHeaders(_token)}');
+    _log('📡 [API] GET: $url');
 
-    final response = await http.get(
-      url,
-      headers: ApiConstants.getHeaders(_token),
-    );
+    final response = await http
+        .get(url, headers: ApiConstants.getHeaders(_token))
+        .timeout(requestTimeout, onTimeout: () {
+      throw Exception('Request timed out. Please check your connection.');
+    });
 
-    print('📡 [API] GET Response Status: ${response.statusCode}');
-    print('📡 [API] GET Response Body: ${response.body}');
-
+    _log('📡 [API] GET ${response.statusCode}', response.body);
     return _handleResponse(response);
   }
 
@@ -46,19 +58,19 @@ class ApiService {
     Map<String, dynamic> data,
   ) async {
     final url = Uri.parse('${ApiConstants.baseUrl}$endpoint');
-    print('📡 [API] POST Request: $url');
-    print('📡 [API] POST Headers: ${ApiConstants.getHeaders(_token)}');
-    print('📡 [API] POST Body: ${jsonEncode(data)}');
+    _log('📡 [API] POST: $url');
 
-    final response = await http.post(
-      url,
-      headers: ApiConstants.getHeaders(_token),
-      body: jsonEncode(data),
-    );
+    final response = await http
+        .post(
+          url,
+          headers: ApiConstants.getHeaders(_token),
+          body: jsonEncode(data),
+        )
+        .timeout(requestTimeout, onTimeout: () {
+      throw Exception('Request timed out. Please check your connection.');
+    });
 
-    print('📡 [API] POST Response Status: ${response.statusCode}');
-    print('📡 [API] POST Response Body: ${response.body}');
-
+    _log('📡 [API] POST ${response.statusCode}', response.body);
     return _handleResponse(response);
   }
 
@@ -67,35 +79,33 @@ class ApiService {
     Map<String, dynamic> data,
   ) async {
     final url = Uri.parse('${ApiConstants.baseUrl}$endpoint');
-    print('📡 [API] PUT Request: $url');
-    print('📡 [API] PUT Headers: ${ApiConstants.getHeaders(_token)}');
-    print('📡 [API] PUT Body: ${jsonEncode(data)}');
+    _log('📡 [API] PUT: $url');
 
-    final response = await http.put(
-      url,
-      headers: ApiConstants.getHeaders(_token),
-      body: jsonEncode(data),
-    );
+    final response = await http
+        .put(
+          url,
+          headers: ApiConstants.getHeaders(_token),
+          body: jsonEncode(data),
+        )
+        .timeout(requestTimeout, onTimeout: () {
+      throw Exception('Request timed out. Please check your connection.');
+    });
 
-    print('📡 [API] PUT Response Status: ${response.statusCode}');
-    print('📡 [API] PUT Response Body: ${response.body}');
-
+    _log('📡 [API] PUT ${response.statusCode}', response.body);
     return _handleResponse(response);
   }
 
   static Future<Map<String, dynamic>> delete(String endpoint) async {
     final url = Uri.parse('${ApiConstants.baseUrl}$endpoint');
-    print('📡 [API] DELETE Request: $url');
-    print('📡 [API] DELETE Headers: ${ApiConstants.getHeaders(_token)}');
+    _log('📡 [API] DELETE: $url');
 
-    final response = await http.delete(
-      url,
-      headers: ApiConstants.getHeaders(_token),
-    );
+    final response = await http
+        .delete(url, headers: ApiConstants.getHeaders(_token))
+        .timeout(requestTimeout, onTimeout: () {
+      throw Exception('Request timed out. Please check your connection.');
+    });
 
-    print('📡 [API] DELETE Response Status: ${response.statusCode}');
-    print('📡 [API] DELETE Response Body: ${response.body}');
-
+    _log('📡 [API] DELETE ${response.statusCode}', response.body);
     return _handleResponse(response);
   }
 
@@ -147,9 +157,7 @@ class ApiService {
 
   static Map<String, dynamic> _handleResponse(http.Response response) {
     try {
-      print('📡 [API] Parsing response...');
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      print('📡 [API] Parsed Data: ${jsonEncode(data)}');
 
       // Add status code to response for better error handling
       data['_statusCode'] = response.statusCode;
@@ -158,7 +166,7 @@ class ApiService {
       // This allows proper handling of {"success": false, "message": "..."} responses
       return data;
     } catch (e) {
-      print('❌ [API] Parse Error: $e');
+      if (kDebugMode) print('❌ [API] Parse Error: $e');
       // Return error response in expected format
       return {
         'success': false,

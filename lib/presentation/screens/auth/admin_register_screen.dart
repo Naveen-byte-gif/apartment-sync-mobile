@@ -121,12 +121,13 @@ class _AdminRegisterScreenState extends State<AdminRegisterScreen> {
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Column(
+                  child: Column(
                     children: [
-                      Icon(
-                        Icons.admin_panel_settings,
-                        size: 48,
-                        color: AppColors.primary,
+                      Image.asset(
+                        'assets/images/logo_circle_apartmentsync.png',
+                        fit: BoxFit.contain,
+                        width: 40,
+                        height: 40,
                       ),
                       SizedBox(height: 12),
                       Text(

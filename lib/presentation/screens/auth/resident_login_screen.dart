@@ -7,11 +7,8 @@ import 'otp_verification_screen.dart';
 
 class ResidentLoginScreen extends StatefulWidget {
   final String roleContext;
-  
-  const ResidentLoginScreen({
-    super.key,
-    required this.roleContext,
-  });
+
+  const ResidentLoginScreen({super.key, required this.roleContext});
 
   @override
   State<ResidentLoginScreen> createState() => _ResidentLoginScreenState();
@@ -74,6 +71,7 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
       }
     }
   }
+
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
@@ -173,25 +171,22 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
                       Row(
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.white),
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.white,
+                            ),
                             onPressed: () => Navigator.pop(context),
                           ),
                           const SizedBox(width: 8),
-                          Container(
+                          Image.asset(
+                            'assets/images/logo_circle_apartmentsync.png',
+                            fit: BoxFit.contain,
                             width: 40,
                             height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.home,
-                              color: AppColors.primary,
-                            ),
                           ),
                           const SizedBox(width: 12),
                           const Text(
-                            'Resident Login',
+                            'ApartmentSync Resident',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 20,
@@ -257,7 +252,9 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
                                 if (value == null || value.isEmpty) {
                                   return 'Please enter your email address';
                                 }
-                                final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+                                final emailRegex = RegExp(
+                                  r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                                );
                                 if (!emailRegex.hasMatch(value)) {
                                   return 'Please enter a valid email address';
                                 }
@@ -281,7 +278,8 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
                                     ),
                                     onPressed: () {
                                       setState(() {
-                                        _isPasswordVisible = !_isPasswordVisible;
+                                        _isPasswordVisible =
+                                            !_isPasswordVisible;
                                       });
                                     },
                                   ),
@@ -320,7 +318,8 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => const ForgotPasswordScreen(),
+                                          builder: (_) =>
+                                              const ForgotPasswordScreen(),
                                         ),
                                       );
                                     },
@@ -357,8 +356,8 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
                                         strokeWidth: 2,
                                         valueColor:
                                             AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
+                                              Colors.white,
+                                            ),
                                       ),
                                     )
                                   : Row(
@@ -405,4 +404,3 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
     );
   }
 }
-

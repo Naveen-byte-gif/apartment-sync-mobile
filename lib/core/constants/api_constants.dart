@@ -1,15 +1,19 @@
 class ApiConstants {
   // Base URL - Update this with your backend URL
-  static const String baseUrl = 'http://192.168.0.105:6500/api';
+  // static const String baseUrl = 'http://192.168.1.29:6500/api';
 
-  // ------------- AWS URL--------------
-  // static const String baseUrl = 'http://13.60.226.11:6500/api';
+  // ------------- AWS URL--------------http://51.21.199.219:6500/health
+  static const String baseUrl = 'http://51.21.199.219:6500/api';
   // static const String baseUrl = 'https://apartment-sync-backend.onrender.com/api';
+
   // Socket.IO
-  static const String socketUrl = 'http://192.168.0.105:6500';
+  // static const String socketUrl = 'http://192.168.1.29:6500';
 
   // ------------- AWS URL--------------
-  // static const String socketUrl = 'http://13.60.226.11:6500';
+  static const String socketUrl = 'http://51.21.199.219:6500';
+
+
+  
   // static const String socketUrl = 'https://apartment-sync-backend.onrender.com';
 
   // Auth Endpoints

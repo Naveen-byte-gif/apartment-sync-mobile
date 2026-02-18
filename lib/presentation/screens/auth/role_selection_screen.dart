@@ -24,10 +24,7 @@ class RoleSelectionScreen extends StatelessWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.primary,
-                      AppColors.primaryLight,
-                    ],
+                    colors: [AppColors.primary, AppColors.primaryLight],
                   ),
                 ),
                 child: Padding(
@@ -35,27 +32,11 @@ class RoleSelectionScreen extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 20,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: Image.asset(
-                          'assets/images/brand-role.png',
-                          width: 90,
-                          height: 90,
-                          fit: BoxFit.contain,
-                        ),
+                      Image.asset(
+                        'assets/images/logo_circle_apartmentsync.png',
+                        fit: BoxFit.contain,
+                        width: 140,
+                        height: 140,
                       ),
                       const SizedBox(height: 24),
                       Text(
@@ -112,14 +93,12 @@ class RoleSelectionScreen extends StatelessWidget {
                       _RoleCard(
                         icon: FontAwesomeIcons.userShield,
                         title: 'Admin',
-                        subtitle: 'Full owner-level access to all buildings and management features',
+                        subtitle:
+                            'Full owner-level access to all buildings and management features',
                         gradient: const LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [
-                            Color(0xFFDC2626),
-                            Color(0xFFB91C1C),
-                          ],
+                          colors: [Color(0xFFDC2626), Color(0xFFB91C1C)],
                         ),
                         onTap: () {
                           Navigator.push(
@@ -136,14 +115,12 @@ class RoleSelectionScreen extends StatelessWidget {
                       _RoleCard(
                         icon: FontAwesomeIcons.userTie,
                         title: 'Staff',
-                        subtitle: 'Access to assigned buildings and operational features',
+                        subtitle:
+                            'Access to assigned buildings and operational features',
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.info,
-                            const Color(0xFF2563EB),
-                          ],
+                          colors: [AppColors.info, const Color(0xFF2563EB)],
                         ),
                         onTap: () {
                           Navigator.push(
@@ -160,14 +137,12 @@ class RoleSelectionScreen extends StatelessWidget {
                       _RoleCard(
                         icon: FontAwesomeIcons.houseUser,
                         title: 'Resident',
-                        subtitle: 'Access to your building, flat details, and community features',
+                        subtitle:
+                            'Access to your building, flat details, and community features',
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [
-                            AppColors.success,
-                            const Color(0xFF059669),
-                          ],
+                          colors: [AppColors.success, const Color(0xFF059669)],
                         ),
                         onTap: () {
                           Navigator.push(
@@ -220,10 +195,7 @@ class _RoleCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: AppColors.border,
-              width: 1.5,
-            ),
+            border: Border.all(color: AppColors.border, width: 1.5),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.04),
@@ -249,11 +221,7 @@ class _RoleCard extends StatelessWidget {
                   ],
                 ),
                 alignment: Alignment.center,
-                child: FaIcon(
-                  icon,
-                  color: Colors.white,
-                  size: 28,
-                ),
+                child: FaIcon(icon, color: Colors.white, size: 28),
               ),
               const SizedBox(width: 16),
               Expanded(

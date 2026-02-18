@@ -34,6 +34,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   bool _hasError = false;
   String? _currentUserId;
   String? _currentUserRole;
+  String? _currentUserName;
   String? _apartmentName;
   int _onlineCount = 0;
   bool _isSending = false;
@@ -69,6 +70,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
         setState(() {
           _currentUserId = user.id;
           _currentUserRole = user.role;
+          _currentUserName = user.fullName;
           // Use building code if admin, otherwise use user's apartment code
           _apartmentName = widget.isAdmin && widget.buildingCode != null
               ? widget.buildingCode!
@@ -100,8 +102,11 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
         _apartmentName = chat.apartmentCode;
       });
 
-      // Join chat room
+      // Ensure socket connected and join room so we receive messages immediately
       final socketService = SocketService();
+      if (_currentUserId != null) {
+        socketService.connect(_currentUserId!);
+      }
       socketService.joinChatRoom('community_${chat.apartmentCode}');
 
       // Scroll to bottom
@@ -223,20 +228,25 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     final socketService = SocketService();
 
     socketService.on('new_community_message', (data) {
-      if (mounted && data['message'] != null) {
-        final message = ChatMessage.fromJson(data['message']);
-        
-        // Prevent duplicate messages - check if message ID already exists
-        if (!_seenMessageIds.contains(message.messageId)) {
-          _seenMessageIds.add(message.messageId);
-          setState(() {
-            _chat?.messages.add(message);
-          });
-          _scrollToBottom();
-          
-          // Mark as read if user is viewing the chat
-          _lastReadTimestamp = DateTime.now();
-        }
+      if (!mounted || data['message'] == null) return;
+      try {
+        final message = ChatMessage.fromJson(
+          Map<String, dynamic>.from(data['message'] as Map),
+        );
+        if (_seenMessageIds.contains(message.messageId)) return;
+        _seenMessageIds.add(message.messageId);
+        setState(() {
+          // Remove optimistic temp message if same sender/content
+          _chat?.messages.removeWhere((m) =>
+              m.messageId.startsWith('temp_') &&
+              m.senderId == message.senderId &&
+              m.messageText == message.messageText);
+          _chat?.messages.add(message);
+        });
+        _scrollToBottom();
+        _lastReadTimestamp = DateTime.now();
+      } catch (e) {
+        print('❌ [FLUTTER] new_community_message parse error: $e');
       }
     });
 
@@ -323,18 +333,45 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty || _isSending || _chat == null) return;
 
+    _messageController.clear();
     setState(() => _isSending = true);
+
+    // Optimistic message so it shows immediately
+    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}_$_currentUserId';
+    final optimisticMessage = ChatMessage(
+      messageId: tempId,
+      senderId: _currentUserId ?? '',
+      senderName: _currentUserName ?? 'You',
+      senderRole: _currentUserRole ?? 'resident',
+      messageType: 'text',
+      messageText: text,
+      mediaUrl: null,
+      reactions: [],
+      isEdited: false,
+      isDeleted: false,
+      isPinned: false,
+      isEmergency: false,
+      emergencyKeywords: null,
+      createdAt: DateTime.now(),
+      updatedAt: null,
+    );
+    setState(() {
+      _chat!.messages.add(optimisticMessage);
+    });
+    _seenMessageIds.add(tempId);
+    _scrollToBottom();
+
     try {
-      // Clear input immediately for better UX
-      _messageController.clear();
-      
       await ChatService.sendCommunityMessage(messageText: text);
-      _scrollToBottom();
+      // Real message will arrive via socket (new_community_message); dedupe will replace temp
     } catch (e) {
       print('❌ [FLUTTER] Error sending message: $e');
-      // Restore message text on error
-      _messageController.text = text;
       if (mounted) {
+        _seenMessageIds.remove(tempId);
+        setState(() {
+          _chat!.messages.removeWhere((m) => m.messageId == tempId);
+        });
+        _messageController.text = text;
         AppMessageHandler.showError(
           context,
           'Failed to send message. Please try again.',
@@ -468,6 +505,9 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
 
   @override
   void dispose() {
+    if (_chat != null) {
+      SocketService().leaveChatRoom('community_${_chat!.apartmentCode}');
+    }
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();

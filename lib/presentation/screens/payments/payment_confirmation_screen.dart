@@ -59,13 +59,21 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
 
       if (response['success'] == true) {
         if (mounted) {
+          final data = response['data'];
+          final invoiceObj = data != null ? data['invoice'] as Map<String, dynamic>? : null;
+          final invoiceId = invoiceObj != null
+              ? (invoiceObj['id'] ?? invoiceObj['_id'])?.toString()
+              : null;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Payment confirmed successfully!'),
+            SnackBar(
+              content: Text(
+                invoiceId != null
+                    ? 'Payment confirmed! Invoice has been generated.'
+                    : 'Payment confirmed successfully!',
+              ),
               backgroundColor: AppColors.success,
             ),
           );
-          // Navigate based on whether invoice exists
           if (widget.invoice != null) {
             Navigator.pushAndRemoveUntil(
               context,
@@ -74,8 +82,15 @@ class _PaymentConfirmationScreenState extends State<PaymentConfirmationScreen> {
               ),
               (route) => route.isFirst,
             );
+          } else if (invoiceId != null) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (_) => InvoiceDetailScreen(invoiceId: invoiceId),
+              ),
+              (route) => route.isFirst,
+            );
           } else {
-            // Navigate back to home or payment list if invoice was generated
             Navigator.popUntil(context, (route) => route.isFirst);
           }
         }

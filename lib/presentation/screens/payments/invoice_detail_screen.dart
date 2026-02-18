@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/imports/app_imports.dart';
 import '../../../data/models/invoice_data.dart';
-import '../../../data/models/upi_config_data.dart';
-import 'payment_entry_screen.dart';
+import 'payment_by_phone_screen.dart';
 
 class InvoiceDetailScreen extends StatefulWidget {
   final String invoiceId;
@@ -16,14 +15,12 @@ class InvoiceDetailScreen extends StatefulWidget {
 
 class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   InvoiceData? _invoice;
-  UpiConfigData? _upiConfig;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadInvoice();
-    _loadUpiConfig();
   }
 
   Future<void> _loadInvoice() async {
@@ -41,19 +38,6 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     } catch (e) {
       AppMessageHandler.handleError(context, e);
       setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _loadUpiConfig() async {
-    try {
-      final response = await ApiService.get(ApiConstants.publicUpiConfig);
-      if (response['success'] == true) {
-        setState(() {
-          _upiConfig = UpiConfigData.fromJson(response['data'] ?? {});
-        });
-      }
-    } catch (e) {
-      print('Error loading UPI config: $e');
     }
   }
 
@@ -93,9 +77,6 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                       const SizedBox(height: 16),
                       // Payment summary
                       _PaymentSummaryCard(invoice: _invoice!),
-                      const SizedBox(height: 16),
-                      // UPI info
-                      if (_upiConfig != null) _UpiInfoCard(upiConfig: _upiConfig!),
                       const SizedBox(height: 24),
                       // Action buttons
                       if (_invoice!.status != 'paid' && _invoice!.outstandingAmount > 0)
@@ -106,12 +87,15 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => PaymentEntryScreen(invoice: _invoice!),
+                                  builder: (_) => PaymentByPhoneScreen(
+                                    invoiceId: _invoice!.id,
+                                    initialAmount: _invoice!.outstandingAmount,
+                                  ),
                                 ),
                               ).then((_) => _loadInvoice());
                             },
                             icon: const Icon(Icons.payment),
-                            label: const Text('Pay via UPI'),
+                            label: const Text('Pay by Mobile Number'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
@@ -418,91 +402,4 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
-class _UpiInfoCard extends StatelessWidget {
-  final UpiConfigData upiConfig;
-
-  const _UpiInfoCard({required this.upiConfig});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.account_balance_wallet, color: AppColors.primary),
-                const SizedBox(width: 8),
-                const Text(
-                  'UPI Payment Details',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _UpiInfoRow(label: 'UPI ID', value: upiConfig.upiId),
-            _UpiInfoRow(label: 'Account Holder', value: upiConfig.accountHolderName),
-            if (upiConfig.bankName != null)
-              _UpiInfoRow(label: 'Bank', value: upiConfig.bankName!),
-            if (upiConfig.qrCodeImage != null) ...[
-              const SizedBox(height: 16),
-              Center(
-                child: Image.network(
-                  upiConfig.qrCodeImage!.url,
-                  width: 200,
-                  height: 200,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _UpiInfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _UpiInfoRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 

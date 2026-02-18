@@ -175,6 +175,8 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen>
       String url = ApiConstants.visitors;
       List<String> queryParams = [];
 
+      queryParams.add('page=1');
+      queryParams.add('limit=30');
       if (_selectedStatus != null && _selectedStatus != 'All') {
         queryParams.add('status=${Uri.encodeComponent(_selectedStatus!)}');
       }
@@ -188,9 +190,7 @@ class _VisitorsLogScreenState extends State<VisitorsLogScreen>
         queryParams.add('endDate=${_endDate!.toIso8601String()}');
       }
 
-      if (queryParams.isNotEmpty) {
-        url += '?${queryParams.join('&')}';
-      }
+      url += '?${queryParams.join('&')}';
 
       final response = await ApiService.get(url);
       if (response['success'] == true) {

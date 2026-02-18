@@ -65,6 +65,7 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
           _currentUserRole = user.role;
           _currentUserName = user.fullName;
         });
+        SocketService().connect(user.id);
       }
 
       final chat = await ChatService.getP2PChat(widget.receiverId);
@@ -99,10 +100,8 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
           (p) => p.userId == widget.receiverId,
           orElse: () => chat.participants.first,
         );
-        // Note: Online status would need to be fetched separately or from socket
       });
 
-      // Mark as read
       await ChatService.markP2PAsRead(chat.id);
 
       _scrollToBottom();
@@ -114,18 +113,22 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
 
   void _setupSocketListeners() {
     final socketService = SocketService();
+    // Connect when we have userId (set in _loadUserAndChat); listeners will receive events once chat is loaded
+    if (_currentUserId != null) socketService.connect(_currentUserId!);
 
-    // Listen for received messages (messages from other user)
+    // Listen for received messages (messages from other user) – compare chatId as string
     socketService.on('p2p_message_received', (data) {
-      if (mounted && data['chatId'] == _chat?.id && data['message'] != null) {
-        _handleNewMessage(data['message']);
+      final chatId = data['chatId']?.toString();
+      if (mounted && chatId == _chat?.id && data['message'] != null) {
+        _handleNewMessage(Map<String, dynamic>.from(data['message'] as Map));
       }
     });
 
     // Listen for sent messages (messages we sent)
     socketService.on('p2p_message_sent', (data) {
-      if (mounted && data['chatId'] == _chat?.id && data['message'] != null) {
-        _handleNewMessage(data['message']);
+      final chatId = data['chatId']?.toString();
+      if (mounted && chatId == _chat?.id && data['message'] != null) {
+        _handleNewMessage(Map<String, dynamic>.from(data['message'] as Map));
       }
     });
   }
@@ -136,10 +139,10 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
     try {
       final message = P2PMessage.fromJson(messageData);
 
-      // Check if this message already exists (from optimistic update or duplicate)
-      final existingIndex = _chat!.messages.indexWhere((m) => m.id == message.id);
+      final existingIndex = _chat!.messages.indexWhere(
+        (m) => m.id == message.id,
+      );
       if (existingIndex != -1) {
-        // Replace existing message (optimistic update being replaced by real message)
         final updatedMessages = List<P2PMessage>.from(_chat!.messages);
         updatedMessages[existingIndex] = message;
         updatedMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
@@ -160,23 +163,23 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
       } else if (!_seenMessageIds.contains(message.id)) {
         // New message - add it
         _seenMessageIds.add(message.id);
-        
+
         // Remove any temporary messages with similar content/timestamp (cleanup optimistic updates)
         // Match by sender, content, and timestamp within 5 seconds
-        final updatedMessages = _chat!.messages
-            .where((m) {
-              if (!m.id.startsWith('temp_')) return true;
-              
-              // Check if this temp message matches the real message (same sender, content/media, similar time)
-              final isMatch = m.senderId == message.senderId &&
-                  ((m.message == message.message) || (m.mediaUrl != null && m.mediaUrl == message.mediaUrl)) &&
-                  m.sentAt.difference(message.sentAt).abs().inSeconds < 5;
-              
-              // Keep temp messages that don't match (they'll be cleaned up later)
-              return !isMatch;
-            })
-            .toList();
-        
+        final updatedMessages = _chat!.messages.where((m) {
+          if (!m.id.startsWith('temp_')) return true;
+
+          // Check if this temp message matches the real message (same sender, content/media, similar time)
+          final isMatch =
+              m.senderId == message.senderId &&
+              ((m.message == message.message) ||
+                  (m.mediaUrl != null && m.mediaUrl == message.mediaUrl)) &&
+              m.sentAt.difference(message.sentAt).abs().inSeconds < 5;
+
+          // Keep temp messages that don't match (they'll be cleaned up later)
+          return !isMatch;
+        }).toList();
+
         updatedMessages.add(message);
         updatedMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
 
@@ -229,7 +232,8 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
     setState(() => _isSending = true);
 
     // Generate temporary message ID for optimistic update
-    final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}_${_currentUserId}';
+    final tempMessageId =
+        'temp_${DateTime.now().millisecondsSinceEpoch}_${_currentUserId}';
     final now = DateTime.now();
 
     // Create optimistic message (will be replaced by server response)
@@ -249,7 +253,7 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
     final updatedMessages = List<P2PMessage>.from(_chat!.messages);
     updatedMessages.add(optimisticMessage);
     updatedMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
-    
+
     setState(() {
       _chat = P2PChat(
         id: _chat!.id,
@@ -278,9 +282,11 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
     } catch (e) {
       // Remove optimistic message on error
       if (mounted) {
-        final errorMessages = _chat!.messages.where((m) => m.id != tempMessageId).toList();
+        final errorMessages = _chat!.messages
+            .where((m) => m.id != tempMessageId)
+            .toList();
         errorMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
-        
+
         setState(() {
           _chat = P2PChat(
             id: _chat!.id,
@@ -335,7 +341,8 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
 
       if (uploadResult['url'] != null) {
         // Generate temporary message ID for optimistic update
-        final tempMessageId = 'temp_${DateTime.now().millisecondsSinceEpoch}_${_currentUserId}';
+        final tempMessageId =
+            'temp_${DateTime.now().millisecondsSinceEpoch}_${_currentUserId}';
         final now = DateTime.now();
 
         // Create optimistic message
@@ -356,7 +363,7 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
         final updatedMessages = List<P2PMessage>.from(_chat!.messages);
         updatedMessages.add(optimisticMessage);
         updatedMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
-        
+
         setState(() {
           _chat = P2PChat(
             id: _chat!.id,
@@ -432,7 +439,8 @@ class _P2PChatScreenState extends State<P2PChatScreen> {
 
     // Empty Messages State
     // Get visible messages (not deleted) and ensure they're sorted by timestamp
-    final allMessages = _chat?.messages.where((m) => !m.isDeleted).toList() ?? [];
+    final allMessages =
+        _chat?.messages.where((m) => !m.isDeleted).toList() ?? [];
     final visibleMessages = List<P2PMessage>.from(allMessages);
     visibleMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
     final hasMessages = visibleMessages.isNotEmpty;

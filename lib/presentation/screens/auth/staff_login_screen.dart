@@ -185,21 +185,15 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                             onPressed: () => Navigator.pop(context),
                           ),
                           const SizedBox(width: 8),
-                          Container(
+                          Image.asset(
+                            'assets/images/logo_circle_apartmentsync.png',
+                            fit: BoxFit.contain,
                             width: 40,
                             height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.badge,
-                              color: AppColors.primary,
-                            ),
                           ),
                           const SizedBox(width: 12),
                           const Text(
-                            'Staff Login',
+                            'ApartmentSync Staff',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 20,

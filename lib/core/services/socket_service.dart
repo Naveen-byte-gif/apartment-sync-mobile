@@ -12,6 +12,8 @@ class SocketService {
   IO.Socket? _socket;
   String? _userId;
   bool _listenersInitialized = false;
+  /// Room to re-join on connect/reconnect (e.g. community_ABC1) so messages are received immediately.
+  String? _currentChatRoom;
 
   void connect(String userId) {
     if (_socket != null && _socket!.connected && _userId == userId) {
@@ -41,6 +43,10 @@ class SocketService {
       if (_userId != null) {
         print('🔌 [FLUTTER] Joining user room: user_$_userId');
         _socket!.emit('join_room', 'user_$_userId');
+      }
+      if (_currentChatRoom != null && _currentChatRoom!.isNotEmpty) {
+        print('🔌 [FLUTTER] Re-joining chat room: $_currentChatRoom');
+        _socket!.emit('join_chat_room', _currentChatRoom);
       }
     }
 
@@ -148,14 +154,16 @@ class SocketService {
     });
   }
 
-  /// Join chat room
+  /// Join chat room (e.g. community_ABC1). Re-joined automatically on reconnect.
   void joinChatRoom(String roomName) {
+    _currentChatRoom = roomName;
     _socket?.emit('join_chat_room', roomName);
     print('🔌 [FLUTTER] Joining chat room: $roomName');
   }
 
-  /// Leave chat room
+  /// Leave chat room. Clears re-join on reconnect.
   void leaveChatRoom(String roomName) {
+    if (_currentChatRoom == roomName) _currentChatRoom = null;
     _socket?.emit('leave_chat_room', roomName);
     print('🔌 [FLUTTER] Leaving chat room: $roomName');
   }
@@ -164,6 +172,7 @@ class SocketService {
     _socket?.disconnect();
     _socket = null;
     _listenersInitialized = false;
+    _currentChatRoom = null;
   }
 
   void on(String event, Function(dynamic) callback) {

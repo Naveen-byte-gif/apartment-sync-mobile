@@ -224,6 +224,13 @@ class ComplaintsManagementScreenState
           _selectedBuildingCode,
         );
       }
+      final uri = Uri.parse(endpoint);
+      final query = <String, String>{
+        ...uri.queryParameters,
+        'page': '1',
+        'limit': '50',
+      };
+      endpoint = uri.replace(queryParameters: query).toString();
       final response = await ApiService.get(endpoint);
       print('✅ [FLUTTER] Complaints response received');
 

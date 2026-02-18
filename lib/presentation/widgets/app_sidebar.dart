@@ -9,8 +9,12 @@ import '../screens/notices/notices_screen.dart';
 import '../screens/visitors/visitor_dashboard_screen.dart';
 import '../screens/visitors/visitors_log_screen.dart';
 import '../screens/admin/visitor_management_screen.dart';
+import '../screens/admin/payment_verification_screen.dart';
+import '../screens/admin/invoice_management_screen.dart';
+import '../screens/admin/upi_config_screen.dart';
 import '../screens/staff/users_management_screen.dart';
 import '../screens/staff/create_user_screen.dart';
+import '../screens/payments/invoice_list_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:convert';
 
@@ -554,6 +558,53 @@ class AppSidebarBuilder {
           ],
         ),
         DrawerSection(
+          title: 'Payments',
+          items: [
+            DrawerItem(
+              icon: Icons.verified_user,
+              title: 'Payment Verification',
+              subtitle: 'Approve or reject payments',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PaymentVerificationScreen(),
+                  ),
+                );
+              },
+            ),
+            DrawerItem(
+              icon: Icons.receipt_long,
+              title: 'Invoice Management',
+              subtitle: 'View & create invoices',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const InvoiceManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            DrawerItem(
+              icon: Icons.account_balance_wallet,
+              title: 'UPI Configuration',
+              subtitle: 'Society UPI & QR settings',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const UpiConfigScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        DrawerSection(
           title: 'Settings',
           items: [
             DrawerItem(
@@ -734,6 +785,25 @@ class AppSidebarBuilder {
                 ),
             ],
           ),
+        DrawerSection(
+          title: 'Payments',
+          items: [
+            DrawerItem(
+              icon: Icons.payment,
+              title: 'View Payments',
+              subtitle: 'Payments for your building',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PaymentVerificationScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
         // Tasks Section
         DrawerSection(
           title: 'Tasks',
@@ -871,7 +941,22 @@ class AppSidebarBuilder {
       profilePictureUrl: profilePictureUrl,
       sections: [
         DrawerSection(
+          title: 'Quick access',
           items: [
+            DrawerItem(
+              icon: Icons.payment,
+              title: 'Payments & Invoices',
+              subtitle: 'Pay dues, view invoices',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const InvoiceListScreen(showAppBar: true),
+                  ),
+                );
+              },
+            ),
             DrawerItem(
               icon: Icons.description,
               title: 'Complaints',

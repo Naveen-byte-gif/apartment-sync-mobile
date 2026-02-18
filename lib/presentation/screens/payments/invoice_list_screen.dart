@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/imports/app_imports.dart';
 import '../../../data/models/invoice_data.dart';
 import 'invoice_detail_screen.dart';
-import 'payment_entry_screen.dart';
+import 'payment_by_phone_screen.dart';
 
 class InvoiceListScreen extends StatefulWidget {
   final bool showAppBar;
@@ -43,9 +43,9 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
     setState(() => _isLoading = true);
     try {
       String endpoint = ApiConstants.myInvoices;
-      if (_selectedStatus != null) {
-        endpoint += '?status=$_selectedStatus';
-      }
+      final params = <String>['limit=30', 'skip=0'];
+      if (_selectedStatus != null) params.add('status=$_selectedStatus');
+      endpoint += '?${params.join('&')}';
 
       final response = await ApiService.get(endpoint);
       if (response['success'] == true) {
@@ -264,12 +264,12 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
                                 ).then((_) => _loadInvoices());
                               },
                               onPayNow: () {
-                                // Direct payment - go to payment entry screen
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => PaymentEntryScreen(
-                                      invoice: _invoices[index],
+                                    builder: (_) => PaymentByPhoneScreen(
+                                      invoiceId: _invoices[index].id,
+                                      initialAmount: _invoices[index].outstandingAmount,
                                     ),
                                   ),
                                 ).then((_) => _loadInvoices());
@@ -290,6 +290,19 @@ class _InvoiceListScreenState extends State<InvoiceListScreen> {
           foregroundColor: Colors.white,
         ),
         body: body,
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const PaymentByPhoneScreen(),
+              ),
+            ).then((_) => _loadInvoices());
+          },
+          icon: const Icon(Icons.payment),
+          label: const Text('Pay by Mobile'),
+          backgroundColor: AppColors.primary,
+        ),
       );
     }
 

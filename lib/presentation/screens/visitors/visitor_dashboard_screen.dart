@@ -1216,15 +1216,29 @@ class _EnhancedActivityItem extends StatelessWidget {
                       color: AppColors.textSecondary,
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      '$building - $flatNumber',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
+                    
+                    // Text(
+                    //   '$building - $flatNumber',
+                    //   style: TextStyle(
+                    //     color: AppColors.textSecondary,
+                    //     fontSize: 13,
+                    //     fontWeight: FontWeight.w500,
+                    //   ),
+                    // ),
+                     Expanded(
+      child: Text(
+        '$building - $flatNumber',
+        style: TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    ),
+
+                    const SizedBox(width: 8),
                     Container(
                       width: 4,
                       height: 4,

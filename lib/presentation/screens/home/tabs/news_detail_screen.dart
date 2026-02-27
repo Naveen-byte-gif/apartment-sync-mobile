@@ -177,21 +177,21 @@ class NewsDetailScreen extends StatelessWidget {
                           ),
                           const SizedBox(width: 12),
                         ],
-                        if (article.publishedAt != null) ...[
-                          Icon(
-                            Icons.access_time,
-                            size: 16,
-                            color: Colors.grey[600],
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            _formatDate(article.publishedAt!),
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
+                        // if (article.publishedAt != null) ...[
+                        //   Icon(
+                        //     Icons.access_time,
+                        //     size: 16,
+                        //     color: Colors.grey[600],
+                        //   ),
+                        //   const SizedBox(width: 6),
+                        //   Text(
+                        //     _formatDate(article.publishedAt!),
+                        //     style: TextStyle(
+                        //       fontSize: 14,
+                        //       color: Colors.grey[600],
+                        //     ),
+                        //   ),
+                        // ],
                       ],
                     ),
                     const SizedBox(height: 24),
@@ -228,6 +228,26 @@ class NewsDetailScreen extends StatelessWidget {
                           ),
                         ),
                       ),
+                      SizedBox(height: 20,),
+                       if (article.publishedAt != null) ...[
+                        Row(
+                          children: [
+                          Icon(
+                            Icons.access_time,
+                            size: 16,
+                            color: Colors.grey[600],
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _formatDate(article.publishedAt!),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          ]
+                        )
+                        ],
                   ],
                 ),
               ),

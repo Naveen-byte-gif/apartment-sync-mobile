@@ -497,103 +497,204 @@ class _UsersManagementScreenState extends State<UsersManagementScreen> {
           ),
           // Summary Info and 3D View Button
           const SizedBox(height: 12),
+          // Row(
+          //   children: [
+          //     Expanded(
+          //       child: Container(
+          //         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          //         decoration: BoxDecoration(
+          //           color: AppColors.primary.withOpacity(0.1),
+          //           borderRadius: BorderRadius.circular(8),
+          //         ),
+          //         child: Row(
+          //           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          //           children: [
+          //             Text(
+          //               'Total: ${_filteredUsers.length} ${_selectedFilter == 'resident' ? 'Residents' : 'Staff'}',
+          //               style: TextStyle(
+          //                 fontWeight: FontWeight.w600,
+          //                 color: AppColors.primary,
+          //               ),
+          //             ),
+          //             if (_filteredUsersByBuilding.isNotEmpty)
+          //               Text(
+          //                 '${_filteredUsersByBuilding.length} Building${_filteredUsersByBuilding.length > 1 ? 's' : ''}',
+          //                 style: TextStyle(
+          //                   fontSize: 12,
+          //                   color: AppColors.textSecondary,
+          //                 ),
+          //               ),
+          //           ],
+          //         ),
+          //       ),
+          //     ),
+          //     const SizedBox(width: 12),
+          //     // 3D Building View Button
+          //     if (_selectedBuildingCode != null)
+          //       Container(
+          //         decoration: BoxDecoration(
+          //           gradient: LinearGradient(
+          //             colors: [
+          //               AppColors.primary,
+          //               AppColors.primary.withOpacity(0.8),
+          //             ],
+          //             begin: Alignment.topLeft,
+          //             end: Alignment.bottomRight,
+          //           ),
+          //           borderRadius: BorderRadius.circular(12),
+          //           boxShadow: [
+          //             BoxShadow(
+          //               color: AppColors.primary.withOpacity(0.3),
+          //               blurRadius: 8,
+          //               offset: const Offset(0, 4),
+          //             ),
+          //           ],
+          //         ),
+          //         child: Material(
+          //           color: Colors.transparent,
+          //           child: InkWell(
+          //             onTap: () {
+          //               Navigator.push(
+          //                 context,
+          //                 MaterialPageRoute(
+          //                   builder: (_) => BuildingView3DScreen(
+          //                     buildingCode: _selectedBuildingCode,
+          //                   ),
+          //                 ),
+          //               );
+          //             },
+          //             borderRadius: BorderRadius.circular(12),
+          //             child: Container(
+          //               padding: const EdgeInsets.symmetric(
+          //                 horizontal: 16,
+          //                 vertical: 12,
+          //               ),
+          //               child: Row(
+          //                 mainAxisSize: MainAxisSize.min,
+          //                 children: [
+          //                   const Icon(
+          //                     Icons.view_in_ar,
+          //                     color: Colors.white,
+          //                     size: 20,
+          //                   ),
+          //                   const SizedBox(width: 8),
+          //                   Text(
+          //                     '3D View',
+          //                     style: const TextStyle(
+          //                       color: Colors.white,
+          //                       fontWeight: FontWeight.bold,
+          //                       fontSize: 14,
+          //                     ),
+          //                   ),
+          //                 ],
+          //               ),
+          //             ),
+          //           ),
+          //         ),
+          //       ),
+          //   ],
+          // ),
           Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Total: ${_filteredUsers.length} ${_selectedFilter == 'resident' ? 'Residents' : 'Staff'}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      if (_filteredUsersByBuilding.isNotEmpty)
-                        Text(
-                          '${_filteredUsersByBuilding.length} Building${_filteredUsersByBuilding.length > 1 ? 's' : ''}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                    ],
-                  ),
+  children: [
+    Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Total: ${_filteredUsers.length} ${_selectedFilter == 'resident' ? 'Residents' : 'Staff'}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (_filteredUsersByBuilding.isNotEmpty)
+              Text(
+                '${_filteredUsersByBuilding.length} Building${_filteredUsersByBuilding.length > 1 ? 's' : ''}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
                 ),
               ),
-              const SizedBox(width: 12),
-              // 3D Building View Button
-              if (_selectedBuildingCode != null)
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.primary,
-                        AppColors.primary.withOpacity(0.8),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => BuildingView3DScreen(
-                              buildingCode: _selectedBuildingCode,
-                            ),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.view_in_ar,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '3D View',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+          ],
+        ),
+      ),
+    ),
+    const SizedBox(width: 12),
+
+    // 3D Building View Button
+    if (_selectedBuildingCode != null)
+      Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primary,
+              AppColors.primary.withOpacity(0.8),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BuildingView3DScreen(
+                    buildingCode: _selectedBuildingCode,
                   ),
                 ),
-            ],
+              );
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(
+                    Icons.view_in_ar,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    '3D View',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
+        ),
+      ),
+  ],
+)
         ],
       ),
     );
@@ -1352,6 +1453,8 @@ class _UserDetailsSheetState extends State<_UserDetailsSheet> {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
+                                Flexible(
+  child:
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
@@ -1380,18 +1483,33 @@ class _UserDetailsSheetState extends State<_UserDetailsSheet> {
                                             : Colors.orange.shade700,
                                       ),
                                       const SizedBox(width: 4),
-                                      Text(
-                                        widget.user.role.toUpperCase(),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: isResident
-                                              ? Colors.blue.shade700
-                                              : Colors.orange.shade700,
-                                        ),
-                                      ),
+                                       Flexible(
+      child: Text(
+        widget.user.role.toUpperCase(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: isResident
+              ? Colors.blue.shade700
+              : Colors.orange.shade700,
+        ),
+      ),
+                                       )
+                                      // Text(
+                                      //   widget.user.role.toUpperCase(),
+                                      //   style: TextStyle(
+                                      //     fontSize: 12,
+                                      //     fontWeight: FontWeight.bold,
+                                      //     color: isResident
+                                      //         ? Colors.blue.shade700
+                                      //         : Colors.orange.shade700,
+                                      //   ),
+                                      // ),
                                     ],
                                   ),
+                                ),
                                 ),
                               ],
                             ),

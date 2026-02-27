@@ -1158,82 +1158,161 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
             ],
           ),
           const SizedBox(height: 12),
-          ..._activeComplaints.take(3).map((complaint) {
-            return _build3DCard(
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(18),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: AppColors.warning.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
+          Column(
+  children: List.generate(
+    _activeComplaints.take(3).length,
+    (index) {
+      final complaint = _activeComplaints[index];
+      return Padding(
+        padding: EdgeInsets.only(bottom: index == _activeComplaints.length - 1 ? 0 : 12),
+        child: _build3DCard(
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.description,
+                    color: AppColors.warning,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        complaint['title'] ?? 'No Title',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      child: const Icon(
-                        Icons.description,
-                        color: AppColors.warning,
+                      const SizedBox(height: 4),
+                      Text(
+                        'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            complaint['title'] ?? 'No Title',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.textPrimary,
-                                ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: AppColors.textSecondary),
-                          ),
-                          if (complaint['createdAt'] != null) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.access_time,
-                                  size: 12,
-                                  color: AppColors.textLight,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _formatDateRelative(complaint['createdAt']),
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(color: AppColors.textLight),
-                                ),
-                              ],
+                      if (complaint['createdAt'] != null) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.access_time, size: 12, color: AppColors.textLight),
+                            const SizedBox(width: 4),
+                            Text(
+                              _formatDateRelative(complaint['createdAt']),
+                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: AppColors.textLight,
+                                  ),
                             ),
                           ],
-                        ],
-                      ),
-                    ),
-                    Chip(
-                      label: Text(complaint['status'] ?? 'Open'),
-                      backgroundColor: _getStatusColor(
-                        complaint['status'],
-                      ).withOpacity(0.2),
-                      labelStyle: TextStyle(
-                        color: _getStatusColor(complaint['status']),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }).toList(),
+                Chip(
+                  label: Text(complaint['status'] ?? 'Open'),
+                  backgroundColor: _getStatusColor(complaint['status']).withOpacity(0.2),
+                  labelStyle: TextStyle(
+                    color: _getStatusColor(complaint['status']),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  ),
+)
+          // ..._activeComplaints.take(3).map((complaint) {
+          //   return _build3DCard(
+          //     child: Container(
+          //       margin: const EdgeInsets.only(bottom: 12),
+          //       padding: const EdgeInsets.all(18),
+          //       child: Row(
+          //         children: [
+          //           Container(
+          //             width: 50,
+          //             height: 50,
+          //             decoration: BoxDecoration(
+          //               color: AppColors.warning.withOpacity(0.1),
+          //               borderRadius: BorderRadius.circular(12),
+          //             ),
+          //             child: const Icon(
+          //               Icons.description,
+          //               color: AppColors.warning,
+          //             ),
+          //           ),
+          //           const SizedBox(width: 12),
+          //           Expanded(
+          //             child: Column(
+          //               crossAxisAlignment: CrossAxisAlignment.start,
+          //               children: [
+          //                 Text(
+          //                   complaint['title'] ?? 'No Title',
+          //                   style: Theme.of(context).textTheme.titleLarge
+          //                       ?.copyWith(
+          //                         fontWeight: FontWeight.bold,
+          //                         color: AppColors.textPrimary,
+          //                       ),
+          //                   maxLines: 1,
+          //                   overflow: TextOverflow.ellipsis,
+          //                 ),
+          //                 const SizedBox(height: 4),
+          //                 Text(
+          //                   'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
+          //                   style: Theme.of(context).textTheme.bodySmall
+          //                       ?.copyWith(color: AppColors.textSecondary),
+          //                 ),
+          //                 if (complaint['createdAt'] != null) ...[
+          //                   const SizedBox(height: 4),
+          //                   Row(
+          //                     children: [
+          //                       Icon(
+          //                         Icons.access_time,
+          //                         size: 12,
+          //                         color: AppColors.textLight,
+          //                       ),
+          //                       const SizedBox(width: 4),
+          //                       Text(
+          //                         _formatDateRelative(complaint['createdAt']),
+          //                         style: Theme.of(context).textTheme.labelSmall
+          //                             ?.copyWith(color: AppColors.textLight),
+          //                       ),
+          //                     ],
+          //                   ),
+          //                 ],
+          //               ],
+          //             ),
+          //           ),
+          //           Chip(
+          //             label: Text(complaint['status'] ?? 'Open'),
+          //             backgroundColor: _getStatusColor(
+          //               complaint['status'],
+          //             ).withOpacity(0.2),
+          //             labelStyle: TextStyle(
+          //               color: _getStatusColor(complaint['status']),
+          //               fontSize: 12,
+          //             ),
+          //           ),
+          //         ],
+          //       ),
+          //     ),
+          //   );
+          // }).toList(),
         ],
       ),
     );

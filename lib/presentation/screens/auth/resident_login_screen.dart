@@ -164,7 +164,8 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
               children: [
                 // Header
                 Padding(
-                  padding: const EdgeInsets.all(20.0),
+                 // padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.symmetric(vertical: 20.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -189,18 +190,27 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
                             'ApartmentSync Resident',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 20,
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Access your building and flat details',
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
+                      Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+  child: const Text(
+    'Access your building and flat details',
+    style: TextStyle(
+      color: Colors.white70,
+      fontSize: 14,
+    ),
+  ),
+),
                       const SizedBox(height: 40),
+                         Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+  child:
                       const Text(
                         'Welcome Back!',
                         style: TextStyle(
@@ -209,11 +219,17 @@ class _ResidentLoginScreenState extends State<ResidentLoginScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+
+                         ),
                       const SizedBox(height: 8),
+                         Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+  child:
                       const Text(
                         'Sign in to continue to your community',
                         style: TextStyle(color: Colors.white70, fontSize: 16),
                       ),
+                         ),
                     ],
                   ),
                 ),

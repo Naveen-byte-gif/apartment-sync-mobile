@@ -836,16 +836,20 @@ class _ComplaintDetailScreenState extends State<ComplaintDetailScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
+           // Row(
+              //children: [
+              Column(
+                children: [
                 _buildInfoChip('Category', _complaint?['category'] ?? 'N/A'),
                 const SizedBox(width: 8),
                 _buildInfoChip(
                   'Sub-category',
                   _complaint?['subCategory'] ?? 'N/A',
                 ),
-              ],
-            ),
+                ]
+              ),
+             // ],
+          //  ),
             const SizedBox(height: 16),
             const Text(
               'Description',

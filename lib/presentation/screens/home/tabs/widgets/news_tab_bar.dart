@@ -47,7 +47,7 @@ class NewsTabBar extends StatelessWidget {
                   SizedBox(width: 6),
                   Text('Sports'),
                 ],
-              ),
+              ),       
             ),
             Tab(
               child: Row(

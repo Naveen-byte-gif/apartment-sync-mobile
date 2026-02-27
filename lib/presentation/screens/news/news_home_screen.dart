@@ -480,7 +480,7 @@ class _CricketListTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
-                Icons.sports_cricket,
+               Icons.sports_cricket,
                 color: Colors.red,
               ),
             ),

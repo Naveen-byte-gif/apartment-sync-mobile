@@ -350,14 +350,14 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
                     colors: [Colors.white, Colors.white.withOpacity(0.9)],
                   ),
                   borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
-                      spreadRadius: 2,
-                    ),
-                  ],
+                  // boxShadow: [
+                  //   BoxShadow(
+                  //     color: Colors.black.withOpacity(0.2),
+                  //     blurRadius: 15,
+                  //     offset: const Offset(0, 5),
+                  //     spreadRadius: 2,
+                  //   ),
+                  // ],
                 ),
                 child: _user?.profilePicture != null && _user!.profilePicture!.isNotEmpty
                     ? ClipRRect(
@@ -540,13 +540,13 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
                             colors: [AppColors.primary, AppColors.primaryDark],
                           ),
                           borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          // boxShadow: [
+                          //   BoxShadow(
+                          //     color: AppColors.primary.withOpacity(0.3),
+                          //     blurRadius: 8,
+                          //     offset: const Offset(0, 4),
+                          //   ),
+                          // ],
                         ),
                         child: const Icon(
                           Icons.home,
@@ -641,7 +641,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
               Expanded(
                 child: _build3DCard(
                   child: _SummaryCard(
-                    title: 'Active Complaints',
+                  //  title: 'Active Complaints',
                     value:
                         '${_dashboardData?['activeComplaints'] ?? _activeComplaints.length}',
                     subtitle:
@@ -655,7 +655,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
               Expanded(
                 child: _build3DCard(
                   child: _SummaryCard(
-                    title: 'Resolved',
+                   // title: 'Resolved',
                     value:
                         '${_dashboardData?['resolvedComplaints'] ?? _recentCompletions.length}',
                     subtitle: 'Completed',
@@ -668,7 +668,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
               Expanded(
                 child: _build3DCard(
                   child: _SummaryCard(
-                    title: 'Notices',
+                 //   title: 'Notices',
                     value: '$_unreadNotifications',
                     subtitle: 'Unread',
                     icon: Icons.notifications,
@@ -690,26 +690,40 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
         ..rotateX(0.01)
         ..rotateY(-0.01),
       alignment: FractionalOffset.center,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(0.15),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-              spreadRadius: 2,
-            ),
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: child,
+      child:
+   Container(
+    decoration: BoxDecoration(
+      color: const Color(0xFFFDFDFD),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: Colors.grey.shade300,
+        width: 0.5,
       ),
+    ),
+    child: child,
+
+      // child: Container(
+      //   decoration: BoxDecoration(
+      //     color: Colors.white,
+      //     borderRadius: BorderRadius.circular(20),
+      //     boxShadow: [
+      //       // BoxShadow(
+      //       //   color: AppColors.primary.withOpacity(0.15),
+      //       //   blurRadius: 20,
+      //       //   offset: const Offset(0, 8),
+      //       //   spreadRadius: 2,
+      //       // ),
+      //       // BoxShadow(
+      //       //   color: Colors.black.withOpacity(0.05),
+      //       //   blurRadius: 10,
+      //       //   offset: const Offset(0, 4),
+      //       // ),
+      //     ],
+      //   ),
+      //   child: child,
+      // ),
+  
+    )
     );
   }
 
@@ -1237,82 +1251,7 @@ class _ResidentHomeScreenState extends State<ResidentHomeScreen>
     },
   ),
 )
-          // ..._activeComplaints.take(3).map((complaint) {
-          //   return _build3DCard(
-          //     child: Container(
-          //       margin: const EdgeInsets.only(bottom: 12),
-          //       padding: const EdgeInsets.all(18),
-          //       child: Row(
-          //         children: [
-          //           Container(
-          //             width: 50,
-          //             height: 50,
-          //             decoration: BoxDecoration(
-          //               color: AppColors.warning.withOpacity(0.1),
-          //               borderRadius: BorderRadius.circular(12),
-          //             ),
-          //             child: const Icon(
-          //               Icons.description,
-          //               color: AppColors.warning,
-          //             ),
-          //           ),
-          //           const SizedBox(width: 12),
-          //           Expanded(
-          //             child: Column(
-          //               crossAxisAlignment: CrossAxisAlignment.start,
-          //               children: [
-          //                 Text(
-          //                   complaint['title'] ?? 'No Title',
-          //                   style: Theme.of(context).textTheme.titleLarge
-          //                       ?.copyWith(
-          //                         fontWeight: FontWeight.bold,
-          //                         color: AppColors.textPrimary,
-          //                       ),
-          //                   maxLines: 1,
-          //                   overflow: TextOverflow.ellipsis,
-          //                 ),
-          //                 const SizedBox(height: 4),
-          //                 Text(
-          //                   'Ticket: ${complaint['ticketNumber'] ?? 'N/A'}',
-          //                   style: Theme.of(context).textTheme.bodySmall
-          //                       ?.copyWith(color: AppColors.textSecondary),
-          //                 ),
-          //                 if (complaint['createdAt'] != null) ...[
-          //                   const SizedBox(height: 4),
-          //                   Row(
-          //                     children: [
-          //                       Icon(
-          //                         Icons.access_time,
-          //                         size: 12,
-          //                         color: AppColors.textLight,
-          //                       ),
-          //                       const SizedBox(width: 4),
-          //                       Text(
-          //                         _formatDateRelative(complaint['createdAt']),
-          //                         style: Theme.of(context).textTheme.labelSmall
-          //                             ?.copyWith(color: AppColors.textLight),
-          //                       ),
-          //                     ],
-          //                   ),
-          //                 ],
-          //               ],
-          //             ),
-          //           ),
-          //           Chip(
-          //             label: Text(complaint['status'] ?? 'Open'),
-          //             backgroundColor: _getStatusColor(
-          //               complaint['status'],
-          //             ).withOpacity(0.2),
-          //             labelStyle: TextStyle(
-          //               color: _getStatusColor(complaint['status']),
-          //               fontSize: 12,
-          //             ),
-          //           ),
-          //         ],
-          //       ),
-          //     ),
-          //   );
-          // }).toList(),
+        
         ],
       ),
     );
@@ -1456,14 +1395,14 @@ class _FlatInfoItem extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  final String title;
+  //final String title;
   final String value;
   final String subtitle;
   final IconData icon;
   final Color color;
 
   const _SummaryCard({
-    required this.title,
+  //  required this.title,
     required this.value,
     required this.subtitle,
     required this.icon,
@@ -1479,12 +1418,12 @@ class _SummaryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
         boxShadow: [
-          BoxShadow(
-            color: AppColors.border.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
+          // BoxShadow(
+          //   color: AppColors.border.withOpacity(0.1),
+          //   spreadRadius: 1,
+          //   blurRadius: 4,
+          //   offset: const Offset(0, 2),
+          // ),
         ],
       ),
       child: Column(
@@ -1493,15 +1432,15 @@ class _SummaryCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+              // Expanded(
+              //   child: Text(
+              //     title,
+              //     style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              //       color: AppColors.textSecondary,
+              //     ),
+              //     overflow: TextOverflow.ellipsis,
+              //   ),
+              // ),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.all(6),
